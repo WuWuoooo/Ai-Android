@@ -2,13 +2,11 @@ package com.ai.android.plugin
 
 import android.content.Context
 import android.util.Log
+import com.ai.android.agent.PluginGuardBridge
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * 插件注册表：登记挂件 / 主题 / 事件钩子，并向插件广播 Agent 事件。
- *
- * beta5：空壳 + 静态挂件注册（不加载 JS）；
- * beta6：在此加载 JS 插件（WebView/JsBridge），并把 [AgentEventHook] 事件分发给插件。
+ * 插件注册表：登记挂件 / 主题 / 事件钩子 / Guard，并向插件广播 Agent 事件。
  */
 class PluginRegistry(private val context: Context) {
 
@@ -22,20 +20,20 @@ class PluginRegistry(private val context: Context) {
 
     private val maxHookLog = 50
 
-        /** ⭐ 当前生效的悬浮窗样式（无 THEME 插件时返回默认 AndLua 白卡风格） */
+    /** 当前生效的悬浮窗样式（无 THEME 插件时返回默认） */
     @Volatile var activeFloatingStyle: FloatingStyle = FloatingStyle.DEFAULT
 
-        /** ⭐ 第5项：当前生效的 App 主题（无 THEME 插件时返回默认，不改变内置配色） */
+    /** 当前生效的 App 主题（无 THEME 插件时返回默认，不改变内置配色） */
     @Volatile var activeAppTheme: com.ai.android.ui.theme.AppThemeStyle =
         com.ai.android.ui.theme.AppThemeStyle.DEFAULT
 
-    /** ⭐ v1.1.0 #3：当前生效的聊天气泡样式（无 THEME 插件时返回默认） */
+    /** 当前生效的聊天气泡样式（无 THEME 插件时返回默认） */
     @Volatile var activeChatBubbleStyle: ChatBubbleStyle = ChatBubbleStyle.DEFAULT
 
-    /** ⭐ v1.1.0 #3：插件声明的启用功能集（空 = 全默认启用） */
+    /** 插件声明的启用功能集（空 = 全默认启用） */
     @Volatile var activeFeatures: List<String> = emptyList()
 
-    /** ⭐ v1.1.0 #3：查插件是否启用某功能（空清单 = 全启用） */
+    /** 查插件是否启用某功能（空清单 = 全启用） */
     fun isFeatureEnabled(feature: String): Boolean =
         activeFeatures.isEmpty() || feature in activeFeatures
 
@@ -43,10 +41,12 @@ class PluginRegistry(private val context: Context) {
         ignoreUnknownKeys = true; encodeDefaults = true
     }
 
-                /** 解析插件目录内可选的 theme.json → FloatingStyle；缺省返回默认样式 */
+    // ==================== theme.json 解析 ====================
+
+    /** 解析插件目录内可选的 theme.json → FloatingStyle；缺省返回默认样式 */
     private fun loadThemeStyle(manifest: PluginManifest): FloatingStyle {
         val obj = readThemeJson(manifest) ?: return FloatingStyle.DEFAULT
-                fun ii(k: String): Int? = obj[k]?.let { it.jsonPrimitive.content.toIntOrNull() }
+        fun ii(k: String): Int? = obj[k]?.let { it.jsonPrimitive.content.toIntOrNull() }
         fun ssAll(k: String): String = obj[k]?.jsonPrimitive?.content ?: ""
         fun boolList(k: String): List<String> =
             obj[k]?.let { el ->
@@ -57,7 +57,6 @@ class PluginRegistry(private val context: Context) {
                 }
             } ?: emptyList()
         val d = FloatingStyle.DEFAULT
-        // 聊天气泡（可选 "chatBubble" 节点）
         val bubbleObj = obj["chatBubble"] as? kotlinx.serialization.json.JsonObject
         val chatBubble = if (bubbleObj != null) {
             fun bi(k: String) = bubbleObj[k]?.jsonPrimitive?.content?.toIntOrNull()
@@ -84,7 +83,6 @@ class PluginRegistry(private val context: Context) {
             cornerRadius = ii("cornerRadius") ?: d.cornerRadius,
             panelTitle = obj["panelTitle"]?.jsonPrimitive?.content ?: d.panelTitle,
             ballLabel = obj["ballLabel"]?.jsonPrimitive?.content ?: d.ballLabel,
-            // ⭐ v1.1.0 #3 新增字段
             ballShape = ssAll("ballShape").ifBlank { d.ballShape },
             ballSize = ii("ballSize") ?: d.ballSize,
             ballIcon = ssAll("ballIcon"),
@@ -94,7 +92,7 @@ class PluginRegistry(private val context: Context) {
         )
     }
 
-    /** ⭐ 第5项：解析 theme.json 的 "app" 节点 → AppThemeStyle（软件主题风格）；缺省返回默认 */
+    /** 解析 theme.json 的 "app" 节点 → AppThemeStyle；缺省返回默认 */
     private fun loadAppTheme(manifest: PluginManifest): com.ai.android.ui.theme.AppThemeStyle {
         val obj = readThemeJson(manifest) ?: return com.ai.android.ui.theme.AppThemeStyle.DEFAULT
         val app = obj["app"] as? kotlinx.serialization.json.JsonObject
@@ -109,10 +107,10 @@ class PluginRegistry(private val context: Context) {
         )
     }
 
-        /** 读插件目录 theme.json（解析成 JsonObject），不存在/失败返回 null */
+    /** 读插件目录 theme.json（解析成 JsonObject），不存在/失败返回 null */
     private fun readThemeJson(manifest: PluginManifest): kotlinx.serialization.json.JsonObject? {
         val f = java.io.File(
-            com.ai.android.plugin.PluginManager.pluginsDir(context),
+            PluginManager.pluginsDir(context),
             "${manifest.id}/theme.json",
         )
         if (!f.exists()) return null
@@ -121,15 +119,18 @@ class PluginRegistry(private val context: Context) {
         }.getOrNull()
     }
 
-    /** ⭐ v1.1.0 #3：从 theme.json 解析 "features" 数组（功能开关清单），空 = 未声明 */
+    /** 从 theme.json 解析 "features" 数组（功能开关清单），空 = 未声明 */
     private fun loadFeaturesFromJson(obj: kotlinx.serialization.json.JsonObject): List<String> =
         obj["features"]?.let { el ->
             when (el) {
                 is kotlinx.serialization.json.JsonArray -> el.mapNotNull { it.jsonPrimitive.content }
-                is kotlinx.serialization.json.JsonPrimitive -> el.content.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                is kotlinx.serialization.json.JsonPrimitive ->
+                    el.content.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                 else -> emptyList()
             }
         } ?: emptyList()
+
+    // ==================== 注册 API ====================
 
     fun registerWidget(w: WidgetSlot) {
         synchronized(this) { if (w !in widgets) widgets.add(w) }
@@ -139,12 +140,10 @@ class PluginRegistry(private val context: Context) {
         synchronized(this) { if (t !in themes) themes.add(t) }
     }
 
-    /** ⭐ 登记插件提供的悬浮窗样式（THEME 能力） */
     fun registerStyleProvider(p: ThemeStyleProvider) {
         synchronized(this) { if (p !in styleProviders) styleProviders.add(p) }
     }
 
-    /** 事件记录（保留最近 [maxHookLog] 条，供调试 / beta6 回放） */
     fun registerHook(h: AgentEventHook) {
         synchronized(this) {
             hooks.add(h)
@@ -161,7 +160,6 @@ class PluginRegistry(private val context: Context) {
     fun allHooks(): List<AgentEventHook> = synchronized(this) { hooks.toList() }
     fun allListeners(): List<AgentEventListener> = synchronized(this) { listeners.toList() }
 
-    /** 向所有监听者广播事件（宿主在 Agent 关键节点调用） */
     fun broadcast(event: AgentEventHook) {
         registerHook(event)
         synchronized(this) { listeners.toList() }.forEach { l ->
@@ -170,16 +168,13 @@ class PluginRegistry(private val context: Context) {
         }
     }
 
-            /**
-     * 扫描已导入且已启用的插件，注册静态挂件 + 悬浮窗样式。
-     * 在 MainApp.onCreate 调用一次；设置页插件变更后调用 refresh() 重建。
-     */
+    // ==================== init / refresh ====================
+
     fun init() {
         applyEnabledPlugins()
         Log.d(tag, "PluginRegistry initialized, ${styleProviders.size + widgets.size} entries")
     }
 
-    /** 清空并重建全部挂件 + 样式注册（设置页增删启停插件后调用） */
     fun refresh() {
         synchronized(this) {
             widgets.forEach { runCatching { it.onUnbind() } }
@@ -190,8 +185,12 @@ class PluginRegistry(private val context: Context) {
         Log.d(tag, "PluginRegistry refresh: re-registered ${styleProviders.size + widgets.size} entries")
     }
 
-        /** 扫描启用插件，登记 WIDGET 挂件 + THEME 样式，并取首个 THEME 样式为 active */
+    // ==================== 核心：扫描启用插件 ====================
+
     private fun applyEnabledPlugins() {
+        // ⭐ 卸载所有旧的插件 guards（避免重复注册）
+        PluginGuardBridge.unregisterAll()
+
         val enabled = PluginManager.list(context).filter { PluginManager.isEnabled(context, it.id) }
         enabled.forEach { m ->
             if ("WIDGET" in m.capabilities) {
@@ -200,25 +199,30 @@ class PluginRegistry(private val context: Context) {
             if ("THEME" in m.capabilities) {
                 registerStyleProvider(StaticThemeStyleProvider(m, loadThemeStyle(m)))
             }
+            // ⭐ 声明式 Guard：从 manifest 读
+            if (m.guards.isNotEmpty()) {
+                PluginGuardBridge.registerDeclarative(m.id, m.guards)
+                Log.d(tag, "registered ${m.guards.size} declarative guards for ${m.id}")
+            }
         }
-                        // ⭐ 首个 THEME 插件的样式生效；无则回默认 AndLua 白卡风格
+        // 首个 THEME 插件的样式生效；无则回默认
         activeFloatingStyle = synchronized(this) { styleProviders.firstOrNull()?.style() }
             ?: FloatingStyle.DEFAULT
-        // ⭐ v1.1.0 #3：同步聊天气泡样式（取自当前 active 悬浮窗样式）
+        // 同步聊天气泡样式
         activeChatBubbleStyle = activeFloatingStyle.chatBubble
-        // ⭐ v1.1.0 #3：功能开关——汇总 THEME / FUNCTION 插件在 theme.json 声明的 features
+        // 功能开关
         activeFeatures = enabled
             .filter { "THEME" in it.capabilities || "FUNCTION" in it.capabilities }
             .mapNotNull { m -> readThemeJson(m)?.let { loadFeaturesFromJson(it) } }
             .firstOrNull { it.isNotEmpty() }
             ?: activeFloatingStyle.features
-        // ⭐ 第5项：首个带 "app" 主题节点的 THEME 插件生效；无则回默认
+        // 首个带 "app" 主题节点的 THEME 插件生效；无则回默认
         activeAppTheme = enabled.firstOrNull { it.id == firstThemePluginId() }
             ?.let { loadAppTheme(it) }
             ?: com.ai.android.ui.theme.AppThemeStyle.DEFAULT
     }
 
-        /** 首个带 THEME 能力且 theme.json 含 "app" 节点的启用插件 id */
+    /** 首个带 THEME 能力且 theme.json 含 "app" 节点的启用插件 id */
     private fun firstThemePluginId(): String? {
         val enabled = PluginManager.list(context).filter { PluginManager.isEnabled(context, it.id) }
         return enabled.firstOrNull { m ->
@@ -226,15 +230,14 @@ class PluginRegistry(private val context: Context) {
         }?.id
     }
 
-    /** ⭐ v1.1.0 #3：当前 active 悬浮窗样式所属的 THEME 插件 id（悬浮球图标定位用） */
+    /** 当前 active 悬浮窗样式所属的 THEME 插件 id（悬浮球图标定位用） */
     fun activeThemePluginId(): String? = synchronized(this) {
         styleProviders.firstOrNull()?.manifest?.id
     }
 }
 
 /**
- * beta5 静态挂件：把插件 manifest.iconPath 图标渲染进悬浮窗，点击触发宿主面板展开。
- * JS 动态挂件由 beta6 的插件实现 [WidgetSlot] 提供。
+ * beta5 静态挂件：把插件 manifest.iconPath 图标渲染进悬浮窗。
  */
 class StaticWidgetSlot(
     override val manifest: PluginManifest,

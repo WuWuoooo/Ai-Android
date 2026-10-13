@@ -18,6 +18,15 @@ interface ToolExecutor {
     val dangerous: Boolean get() = false
 
     /**
+     * ⭐ 是否可与其他工具并发执行。
+     * - true（默认）：无状态、无顺序依赖，AgentCore 会并发调用（如 read_file / web_search）。
+     * - false：有状态或有顺序依赖，AgentCore 会严格按模型返回顺序串行执行。
+     *   例：accessibility_control（点按有顺序）、terminal_exec（命令有先后）、
+     *   write/edit/delete/move/rename（文件有先后关系）。
+     */
+    val parallelizable: Boolean get() = true
+
+    /**
      * 执行工具。
      * @param args 模型给出的 JSON 参数
      * @return 给模型查看的结果文本
@@ -56,10 +65,6 @@ fun JsonObject.intAny(vararg keys: String, def: Int = 0): Int {
 
 // ---------- 强校验辅助（缺失即抛出可读错误） ----------
 
-/**
- * 取必填字符串参数。缺失时抛出**人话**错误，让模型下一轮能照着改。
- * @param hint 给模型的补充提示，例如 "例如 /sdcard/Download/note.txt"
- */
 fun JsonObject.requireStr(key: String, hint: String = ""): String {
     val v = this[key]?.jsonPrimitive?.contentOrNull?.trim()
     if (v.isNullOrEmpty()) {
@@ -69,7 +74,6 @@ fun JsonObject.requireStr(key: String, hint: String = ""): String {
     return v
 }
 
-/** 从多个别名中取必填字符串参数 */
 fun JsonObject.requireStrAny(vararg keys: String, hint: String = ""): String {
     for (k in keys) {
         val v = this[k]?.jsonPrimitive?.contentOrNull?.trim()

@@ -3,9 +3,21 @@
     <string name="app_name">Ai Android</string>
     <string name="accessibility_service_description">允许「Ai Android」读取屏幕内容并模拟点击、输入、滑动等手势，用于帮您自动操作手机应用。所有数据仅在本机处理，不会上传。</string>
 
-    <!-- ==================== 设置页（Settings）==================== -->
-    <string name="set_title">设置</string>
+    <!-- ==================== 通用 ==================== -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="close">关闭</string>
+    <string name="delete">删除</string>
+    <string name="save">保存</string>
     <string name="back">返回</string>
+    <string name="rename">重命名</string>
+    <string name="copy">复制</string>
+    <string name="edit">编辑</string>
+    <string name="confirm">确认</string>
+    <string name="search">搜索</string>
+
+    <!-- ==================== 设置页 ==================== -->
+    <string name="set_title">设置</string>
     <string name="set_section_provider">模型服务（Provider）</string>
     <string name="set_section_multimodal">多模态能力绑定</string>
     <string name="set_section_agent">Agent 参数</string>
@@ -25,6 +37,16 @@
     <string name="set_add_provider">＋ 添加 Provider</string>
     <string name="set_cancel">取消</string>
     <string name="set_save">保存</string>
+
+    <!-- 分类列表副标题 -->
+    <string name="cat_sub_model">模型 / 多模态</string>
+    <string name="cat_sub_agent">参数 / 行为 / 读取限制</string>
+    <string name="cat_sub_ui">悬浮窗 / 语言 / 插件 / 风格</string>
+    <string name="cat_sub_harness">工具控制 / 日志 / 子代理</string>
+    <string name="cat_sub_system">Shizuku / AI 操控 / 权限</string>
+    <string name="cat_sub_terminal">Termux / PTY / 环境变量</string>
+    <string name="cat_sub_about">版本 / 项目 / 许可</string>
+    <string name="cat_sub_conversation">记忆 / Token / 项目</string>
 
     <!-- 设置：文件读取 -->
     <string name="readlimit_title">AI 读取文件最大字符数</string>
@@ -59,8 +81,6 @@
     <string name="project_rename">重命名项目</string>
     <string name="project_unnamed">未命名项目</string>
     <string name="project_create">创建</string>
-    <string name="rename">重命名</string>
-    <string name="delete">删除</string>
 
     <!-- 设置：长期记忆 -->
     <string name="memory_desc">AI 通过 save_memory 工具自动写入，也可手动添加。跨会话保留。</string>
@@ -102,7 +122,7 @@
 
     <!-- 设置：插件管理 -->
     <string name="plugin_title">外部插件（静态挂件）</string>
-    <string name="plugin_desc">导入 .zip 挂件包（manifest.json + 图标），在悬浮窗显示。JS 动态挂件 beta6 落地。</string>
+    <string name="plugin_desc">导入 .zip 挂件包（manifest.json + 图标），在悬浮窗显示。</string>
     <string name="plugin_import">＋ 导入插件 .zip</string>
     <string name="plugin_empty">（未导入任何插件）</string>
 
@@ -115,15 +135,12 @@
     <string name="perm_ungranted">未开启</string>
     <string name="perm_go">去开启</string>
 
-    <!-- 设置：语言 / 语言包 -->
+    <!-- 设置：语言 -->
     <string name="lang_title">语言 / Language</string>
     <string name="lang_desc">切换界面语言；导入自定义 .json 语言包可覆盖指定文案。切换即时生效，重启后保留。</string>
     <string name="lang_import_pack">＋ 导入语言包 .json</string>
     <string name="lang_remove_pack">清除自定义语言包</string>
     <string name="lang_follow">跟随系统</string>
-    <string name="lang_pack_imported">语言包已导入</string>
-    <string name="lang_pack_failed">语言包导入失败（需为 key→翻译 的 JSON 对象）</string>
-    <string name="lang_pack_cleared">已清除语言包</string>
 
     <!-- 设置：Shizuku -->
     <string name="shizuku_title">Shizuku 提权</string>
@@ -134,7 +151,7 @@
     <string name="shizuku_request">请求授权</string>
     <string name="shizuku_running_as">运行身份：shell (uid 2000)</string>
 
-        <!-- 设置：Provider 编辑 -->
+    <!-- 设置：Provider 编辑 -->
     <string name="provider_new_title">添加 Provider</string>
     <string name="provider_edit_title">编辑 Provider</string>
     <string name="provider_name">名称</string>
@@ -144,25 +161,27 @@
     <string name="provider_caps">支持的能力</string>
     <string name="provider_openai">OpenAI 兼容</string>
     <string name="provider_anthropic">Anthropic</string>
-        <string name="provider_no_key">未填 API Key</string>
+    <string name="provider_no_key">未填 API Key</string>
     <string name="provider_key_prefix">Key</string>
     <string name="provider_unnamed">未命名</string>
-    <string name="provider_caps_title">支持的能力</string>
 
-        <!-- 设置：多模态绑定 -->
+    <!-- 设置：多模态绑定 -->
     <string name="multimodal_desc">为每种能力指定使用的 Provider。未指定时自动选择 active 或第一个具备该能力的 Provider。</string>
     <string name="multimodal_search">当前搜索</string>
     <string name="multimodal_auto">自动</string>
     <string name="multimodal_none">（无 Provider 支持）</string>
     <string name="mm_image">文生图</string>
+    <string name="mm_video">文生视频</string>
     <string name="mm_vision">识图</string>
+    <string name="mm_audio">识音频</string>
+    <string name="mm_video_understand">识视频</string>
     <string name="mm_tts">语音合成</string>
     <string name="mm_asr">语音识别</string>
     <string name="mm_search">联网搜索</string>
     <string name="mm_call">音视频通话</string>
     <string name="toast_switched">已切换到</string>
 
-    <!-- 设置：请求参数（逐条添加）-->
+    <!-- 设置：请求参数 -->
     <string name="param_title">请求参数（逐条添加）</string>
     <string name="param_desc">新手不用写 JSON：点下方预设一键添加，或「＋ 添加」逐条填 键 / 值 / 类型。保存时自动拼成请求体 JSON；老手可展开「高级 JSON」直接编辑，两者互通不丢数据。</string>
     <string name="param_empty">（暂无自定义参数）</string>
@@ -173,7 +192,7 @@
     <string name="param_json_label">自定义请求体 JSON</string>
     <string name="param_sync">把 JSON 同步为逐条参数</string>
     <string name="param_headers_label">自定义请求头（每行 Key: Value）</string>
-    <string name="param_merge_hint">请求体 JSON 会 merge 进每次请求；键冲突时以你填的为准。直接编辑 JSON 后点上方「同步」可回填到逐条参数，保存时两者一致。</string>
+    <string name="param_merge_hint">请求体 JSON 会 merge 进每次请求；键冲突时以你填的为准。</string>
 
     <!-- 设置：Agent 参数 -->
     <string name="agent_max_rounds">最大工具循环</string>
@@ -181,7 +200,7 @@
     <string name="agent_retries">流式/HTTP 失败自动重试</string>
     <string name="agent_compress">上下文自动压缩</string>
     <string name="agent_compress_desc">超过设定轮次后自动总结旧轮次、压缩上下文，避免对话过长导致请求 400 / 超上下文。</string>
-        <string name="agent_reasoning">推理强度</string>
+    <string name="agent_reasoning">推理强度</string>
     <string name="agent_reasoning_default">默认</string>
     <string name="agent_reasoning_low">低</string>
     <string name="agent_reasoning_medium">中</string>
@@ -192,13 +211,7 @@
     <string name="agent_prompt_example">例如：我是学生，请用简单语言回答…</string>
     <string name="agent_rounds_times">次</string>
 
-    <!-- 设置：Token 统计 toast -->
-    <string name="token_none">当前对话没有可导出的 Token 统计</string>
-    <string name="token_exported">Token 统计已导出</string>
-    <string name="token_export_failed">导出失败：%1$s</string>
-    <string name="token_cleared">已清除当前对话的 Token 统计</string>
-
-    <!-- ==================== 聊天（Chat）==================== -->
+    <!-- ==================== 聊天页 ==================== -->
     <string name="chat_default_title">AI Android</string>
     <string name="chat_unconfigured">未配置模型</string>
     <string name="chat_empty_title">AI Android</string>
@@ -206,15 +219,16 @@
     <string name="chat_empty_hint">可以帮你：整理文件 · 执行终端命令 · 联网搜索 · 定时任务 · 操控其他 App</string>
     <string name="chat_send">发送</string>
     <string name="chat_stop">停止</string>
-    <string name="chat_input_placeholder">输入指令…</string>
+    <string name="chat_input_placeholder">发消息或按住说话</string>
     <string name="chat_working">Agent 工作中…</string>
     <string name="chat_new">新会话</string>
-    <string name="chat_conversations">对话列表</string>
+    <string name="chat_conversations">对话历史</string>
     <string name="chat_settings">设置</string>
     <string name="chat_terminal">终端</string>
     <string name="chat_add">添加附件</string>
     <string name="chat_pick_file">选择文件</string>
     <string name="chat_pick_image">选择图片</string>
+    <string name="chat_permission">权限设置</string>
     <string name="chat_voice_call">语音通话（GLM-4-Voice）</string>
     <string name="chat_video_call">视频通话（GLM-Realtime）</string>
     <string name="chat_quote">引用</string>
@@ -228,9 +242,58 @@
     <string name="chat_ask_reply">回复</string>
     <string name="chat_ask_skip">跳过</string>
     <string name="chat_ask_input">或输入回答…</string>
-    <string name="chat_tts_notready">TTS 未就绪</string>
+    <string name="chat_ask_more">展开更多选项（%1$d）…</string>
 
-    <!-- 气泡菜单 / 工具条 -->
+    <!-- 输入框 -->
+    <string name="input_speaking_record">正在录音…（松手即转写并发送）</string>
+    <string name="input_speaking_live">正在识别…（说一句话，松手结束）</string>
+    <string name="input_speaking_transcribe">转写中…</string>
+    <string name="input_switch_model">切换模型</string>
+    <string name="input_no_chat_model">还没有支持对话的模型，请到 设置 → 模型与能力 添加（能力里勾 CHAT）</string>
+
+    <!-- 权限弹窗 -->
+    <string name="perm_dialog_title">本对话权限</string>
+    <string name="perm_dialog_desc">控制本对话内 AI 能调用的工具范围。超出档位的工具调用会被直接拒绝。</string>
+    <string name="perm_level_0">读写</string>
+    <string name="perm_level_1">设备</string>
+    <string name="perm_level_2">系统</string>
+    <string name="perm_level_3">完全访问</string>
+    <string name="perm_dialog_allowed">本档允许的工具：</string>
+    <string name="perm_saved">已切换为「%1$s」</string>
+
+    <!-- ==================== 对话列表 ==================== -->
+    <string name="conv_title">对话</string>
+    <string name="conv_search_hint">搜索对话内容…</string>
+    <string name="conv_group_pinned">置顶</string>
+    <string name="conv_group_today">今天</string>
+    <string name="conv_group_yesterday">昨天</string>
+    <string name="conv_group_7d">近 7 天</string>
+    <string name="conv_group_30d">近 30 天</string>
+    <string name="conv_group_earlier">更早</string>
+    <string name="conv_group_projects">项目</string>
+    <string name="conv_empty">没有找到对话</string>
+    <string name="conv_rename">重命名</string>
+    <string name="conv_pin">置顶</string>
+    <string name="conv_unpin">取消置顶</string>
+    <string name="conv_move_to_project">移入项目</string>
+    <string name="conv_move_out">移出项目</string>
+    <string name="conv_export">导出对话</string>
+    <string name="conv_delete">删除</string>
+    <string name="conv_delete_title">删除对话</string>
+    <string name="conv_delete_confirm">确定删除对话「%1$s」吗？此操作不可恢复。</string>
+    <string name="conv_rename_title">重命名对话</string>
+    <string name="conv_unnamed">未命名</string>
+    <string name="conv_multi_selected">已选 %1$d 条</string>
+    <string name="conv_select_all_hint">全选 / 排序</string>
+    <string name="conv_multi_exit">退出多选</string>
+    <string name="conv_pin_batch">置顶</string>
+    <string name="conv_deleted_n">已删除 %1$d 条</string>
+    <string name="conv_pinned_n">已置顶 %1$d 条</string>
+    <string name="conv_move_project_title">移入项目</string>
+    <string name="conv_move_project_empty">还没有项目，请到 设置 → 对话管理 → 项目管理 里新建</string>
+    <string name="conv_move_project_current">（当前）</string>
+
+    <!-- ==================== 消息气泡 / 工具条 ==================== -->
     <string name="menu_edit">修改</string>
     <string name="menu_delete">删除</string>
     <string name="menu_multi">多选</string>
@@ -253,11 +316,11 @@
     <string name="toolbar_more">更多</string>
     <string name="toolbar_continue">▶ 继续生成</string>
     <string name="toolbar_none">（无更多操作）</string>
-    <string name="reasoning_title">💭 思考过程</string>
+    <string name="reasoning_title">思考</string>
     <string name="reasoning_streaming">生成中…</string>
     <string name="image_label">图片</string>
 
-    <!-- ==================== 终端（Terminal）==================== -->
+    <!-- ==================== 终端 ==================== -->
     <string name="term_title">终端</string>
     <string name="term_pty_title">终端 (PTY)</string>
     <string name="term_bound">绑定当前对话</string>
@@ -270,17 +333,140 @@
     <string name="term_restart">重启</string>
     <string name="term_pty_unavailable">PTY 终端不可用</string>
     <string name="term_pty_unavailable_desc">（proot 未安装或会话未建）</string>
+    <string name="term_select">选择</string>
+    <string name="term_paste">粘贴</string>
 
-    <!-- ==================== 对话列表（Conversations）==================== -->
-    <string name="conv_title">对话</string>
-    <string name="conv_import">导入对话</string>
-    <string name="conv_new">新会话</string>
-    <string name="conv_pin">置顶</string>
-    <string name="conv_unpin">取消置顶</string>
-    <string name="conv_export">导出对话</string>
-    <string name="conv_token_stats">查看 Token 统计</string>
-
-    <!-- ==================== 通话（Call）==================== -->
+    <!-- ==================== 通话 ==================== -->
     <string name="call_voice">语音通话</string>
     <string name="call_video">视频通话</string>
+    <!-- ConversationDrawer -->
+<string name="conv_toast_exported">已导出对话：%1$s</string>
+<string name="conv_toast_export_failed">导出失败：%1$s</string>
+<string name="conv_menu_more">更多</string>
+<string name="conv_arrow_expand">展开</string>
+<string name="conv_arrow_collapse">收起</string>
+<string name="conv_sort_hint">排序/多选</string>
+<string name="conv_multi_exit_hint">退出多选</string>
+
+<!-- ToolCallCard -->
+<string name="tool_arg">参数</string>
+<string name="tool_result">结果</string>
+<string name="tool_error">错误</string>
+<string name="tool_no_args">（无参数）</string>
+<string name="tool_truncated_n">已截断 %1$d 字符</string>
+<string name="tool_view_all">查看全部（%1$s）</string>
+<string name="tool_truncated_hint">…（截断，点上方「查看全部」）</string>
+<string name="tool_full_result_title">%1$s · 完整结果</string>
+<string name="tool_display_limit_desc">工具卡展开时显示的字符数上限。超过上限会被截断，可点「查看全部」看完整内容。</string>
+<string name="tool_display_arg_limit">参数区上限（字符）</string>
+<string name="tool_display_output_limit">结果区上限（字符）</string>
+
+<string name="harness_shell_freq_title">Shell 命令频率限制</string>
+<string name="harness_shell_freq_desc">每分钟最多执行多少次 run_shell_command / terminal_exec / run_js 等系统类命令。0 = 不限制。</string>
+<string name="harness_shell_freq_unit">次 / 分钟</string>
+<string name="harness_shell_freq_unlimited">不限制</string>
+<string name="harness_shell_freq_limited">限 %1$s 次/分</string>
+<string name="harness_cache_title">执行结果缓存</string>
+<string name="harness_cache_desc">读类工具（read_file / web_search 等）短时间内相同参数直接返回缓存结果。写类工具成功后自动失效。</string>
+<string name="harness_clamp_title">输出裁剪（UI 友好）</string>
+<string name="harness_clamp_desc">剥离 ANSI 转义序列、null 字节，让终端输出在 UI 里更干净。不影响给 AI 看的完整内容。</string>
+<string name="harness_dangerous_title">危险工具自动执行</string>
+<string name="harness_dangerous_desc">关闭后 rm / sudo / delete_file 等危险工具每次都会弹窗确认。</string>
+<string name="harness_path_guard_title">文件写入路径白名单</string>
+<string name="harness_path_guard_desc">只允许 AI 写 /sdcard、App 私有目录等白名单范围。</string>
+
+<string name="harness_log_enable_title">开启会话日志</string>
+<string name="harness_log_enable_desc">记录每次工具调用、参数（脱敏）、结果、守卫拦截、审批。保存在 filesDir/logs/（App 私有）。</string>
+<string name="harness_log_view_current">查看当前对话</string>
+<string name="harness_log_view_all">所有对话日志</string>
+<string name="harness_log_export_all">导出全部日志到 /sdcard/AiAndroid/logs/</string>
+<string name="harness_log_exported_n">已导出 %1$d 个日志到 /sdcard/AiAndroid/logs/</string>
+<string name="harness_log_export_empty">没有可导出的日志</string>
+<string name="harness_log_none">（暂无日志）</string>
+<string name="harness_log_current_title">当前对话日志</string>
+<string name="harness_log_all_title">所有对话日志（%1$d 个）</string>
+<string name="harness_log_view">查看</string>
+
+<string name="harness_subagent_title">允许 AI 调用子代理</string>
+<string name="harness_subagent_desc">AI 遇到复杂/独立/长任务时，可以委派给子代理执行。子代理有独立的上下文和工具循环，只把总结返回给主 Agent，不会污染主对话的上下文。</string>
+<string name="harness_subagent_token_title">子代理 token 计入主对话统计</string>
+<string name="harness_subagent_token_desc">开启后，子代理消耗的 token 会累加到主对话的统计里（InputBar 底部）；关闭时只在会话日志里能看到子代理的 token 明细。</string>
+<string name="harness_subagent_hint">提示：子代理不能再调子代理（防递归）；子代理内部也不会调 ask_user（避免跟主 Agent 抢用户界面）。</string>
+
+<string name="about_title">关于 AI Android</string>
+<string name="about_version">版本</string>
+<string name="about_tech">技术栈</string>
+<string name="about_position">定位</string>
+<string name="about_license">许可</string>
+<string name="about_repo">仓库</string>
+<string name="about_tech_value">Kotlin + Compose</string>
+<string name="about_position_value">运行在手机上的智能助手 Agent</string>
+<string name="about_license_value">开源</string>
+<string name="about_desc">本 App 可调用 AI 模型、操控手机界面、执行终端命令等。Shizuku 提权后能突破应用沙箱读写 Android/data。</string>
+
+<string name="provider_caps_mutex_hint">能力互斥：语音类（TTS/ASR/REALTIME）与对话/多模态类（CHAT/VISION/IMAGE/VIDEO/AUDIO/VIDEO_UNDERSTAND/SEARCH）不能同选，勾选一类会自动去掉另一类。勾选后会自动追加该能力的默认参数。</string>
+<string name="provider_builtin_title">系统内置参数（每次请求自动发送）</string>
+<string name="provider_builtin_desc">以下由代码自动拼装，不占用下方自定义参数；点 ✕ 可隐藏提示</string>
+<string name="provider_builtin_model_hint">（当前模型名）</string>
+<string name="provider_builtin_messages_hint">（对话消息数组）</string>
+<string name="provider_builtin_tools_hint">（工具定义，若已注册）</string>
+<string name="provider_hide">隐藏</string>
+<string name="provider_fill_defaults">按当前能力重新填入默认参数</string>
+<string name="provider_fill_empty">当前能力集没有默认参数</string>
+<string name="provider_fill_all_exist">参数已全部填入</string>
+<string name="provider_fill_added">已填入 %1$d 条默认参数</string>
+<string name="param_type_title">参数类型</string>
+
+<string name="project_memory_title">项目记忆 · %1$s</string>
+<string name="project_memory_desc">该项目下所有对话共享这套记忆，AI 会自动读取并可按需增删改。</string>
+<string name="project_memory_empty">还没有项目记忆</string>
+<string name="project_memory_add">添加项目记忆</string>
+<string name="project_memory_key_hint">标识（英文短词，如 goal）</string>
+<string name="project_memory_content_label">内容</string>
+<string name="project_memory_view_title">项目记忆：%1$s</string>
+
+<string name="memory_view_title">记忆：%1$s</string>
+<string name="memory_copied">已复制</string>
+
+<string name="shizuku_help_link">授权列表看不到本 App？排障指引</string>
+<string name="shizuku_help_title">Shizuku 授权排障（4 步）</string>
+<string name="shizuku_help_step1">1. 确认 Shizuku 服务已启动：打开 Shizuku 主界面，首页显示「已启动 / Running」。</string>
+<string name="shizuku_help_step2">2. 确认本 App 已安装成功：终端里跑 pm list packages | grep ai.android</string>
+<string name="shizuku_help_step3">3. 确认 Shizuku 版本 ≥ 13（API_V23 权限名）：旧版 11.x 用 API_VXX，识别不到本 App。</string>
+<string name="shizuku_help_step4">4. 强杀 Shizuku 再重启：系统「最近任务」里划掉 Shizuku → 重新打开 Shizuku App → 授权列表刷新。</string>
+<string name="shizuku_help_more">若 4 步都做完仍不显示：到 Shizuku App 里找「手动添加」功能；或升级 Shizuku 到最新版（13.1.5+）</string>
+<string name="shizuku_got_it">知道了</string>
+
+<string name="theme_style_title">主题风格</string>
+<string name="theme_style_desc">切换 App 整体视觉风格（预设配色 + 圆角 + 字重）。切换后悬浮窗也会同步换样式。</string>
+
+<string name="agent_unlimited">不限制</string>
+<string name="agent_max_rounds_label">%1$s %2$s</string>
+<string name="agent_temp_label">温度：%1$s</string>
+<string name="agent_retries_label">流式/HTTP 失败自动重试：%1$d 次（0=不重试）</string>
+<string name="agent_compress_label">上下文自动压缩：%1$d</string>
+
+<string name="memory_btn">记忆</string>
+<string name="lang_imported">语言包已导入</string>
+<string name="lang_failed">语言包导入失败（需为 key→翻译 的 JSON 对象）</string>
+<string name="lang_cleared">已清除语言包</string>
+<string name="plugin_delete_toast">已删除 %1$s</string>
+<string name="plugin_import_error">导入出错：%1$s</string>
+<string name="token_none_to_export">当前对话没有可导出的 Token 统计</string>
+<string name="token_exported">Token 统计已导出</string>
+<string name="token_export_failed">导出失败：%1$s</string>
+<string name="token_cleared">已清除当前对话的 Token 统计</string>
+    <string name="cat_sub_plugin">导入 Skill / 插件，查看信息</string>
+    <string name="plugin_skill_section_title">Skill（技能）</string>
+    <string name="plugin_skill_desc">导入 .zip 技能包（含 SKILL.md）。技能是给 AI 的自然语言指令集，配套 scripts/ 里的 Python 脚本，AI 可用 terminal_exec 运行。</string>
+    <string name="plugin_skill_import">导入 Skill .zip</string>
+    <string name="plugin_skill_empty">（未导入任何 Skill）</string>
+    <string name="plugin_skill_delete_title">删除 Skill</string>
+    <string name="plugin_skill_delete_confirm">确定删除 Skill「%1$s」吗？</string>
+    <string name="plugin_skill_no_content">（SKILL.md 为空）</string>
+    <string name="plugin_detail_id">id：%1$s</string>
+    <string name="plugin_detail_version">版本：%1$s</string>
+    <string name="plugin_detail_author">作者：%1$s</string>
+    <string name="plugin_detail_tags">标签：%1$s</string>
+    <string name="plugin_detail_btn">详情</string>
 </resources>

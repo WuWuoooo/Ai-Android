@@ -4,9 +4,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-        <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <!-- ⭐ #9 自绘全量相册（MediaStore）：API 33+ 读图库需 READ_MEDIA_IMAGES -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -18,13 +17,12 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-        <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <!-- ⭐ v1.1.0 #2：Shizuku 提权（shell uid 2000）所需的 Shizuku 服务权限 -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
-            <application
+    <application
         android:name=".MainApp"
         android:allowBackup="true"
         android:hardwareAccelerated="true"
@@ -57,6 +55,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- ⭐ 前台终端服务：持有所有 PTY 会话 -->
+        <service
+            android:name=".service.terminal.TerminalForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <service
             android:name=".service.AgentAccessibilityService"
             android:exported="false"
@@ -70,7 +74,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-                <service
+        <service
             android:name=".service.MirrorService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
@@ -82,7 +86,7 @@
             android:excludeFromRecents="true"
             android:noHistory="true" />
 
-                <receiver
+        <receiver
             android:name=".service.BootReceiver"
             android:exported="false">
             <intent-filter>
@@ -90,11 +94,7 @@
             </intent-filter>
         </receiver>
 
-                <!-- ⭐ v1.1.0 #2：Shizuku 提权（突破 app 沙箱读写 Android/data）
-             声明 ShizukuProvider：Shizuku 服务端在 app 启动时把 IShizukuService binder 发给我们；
-             未声明此 provider + 未声明 uses-permission 时，Shizuku 的「可授权 App」列表里
-             根本不会出现本 App（这就是"装 Shizuku 也看不到本软件"的根因）。 -->
-                <provider
+        <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
             android:enabled="true"

@@ -15,7 +15,7 @@ class ReadFileTool(private val settings: SettingsRepository? = null) : ToolExecu
         if (!f.exists()) throw IllegalStateException("文件不存在: $path（请检查路径是否正确）")
         if (f.isDirectory) throw IllegalStateException("$path 是目录，请用 list_files 或 list_dir_tree")
 
-        // ⭐ 二进制识别：抽样前 4KB，若 NUL 字节占比 > 1/8 则视为二进制（.dex/.so/.xml(AXML)/图片等）
+        // ⭐ 二进制识别：抽样前 4KB，若 NUL 字节占比 > 1/8 则视为二进制
         val sample = f.inputStream().use { it.readNBytes(4096) }
         val nullCount = sample.count { it == 0.toByte() }
         if (sample.isNotEmpty() && nullCount * 8 > sample.size) {
@@ -51,6 +51,8 @@ class ReadFileTool(private val settings: SettingsRepository? = null) : ToolExecu
 
 class WriteFileTool : ToolExecutor {
     override val name = "write_file"
+    // ⭐ 修复（问题 1）：写文件有顺序依赖，必须串行
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val path = args.requireStr("path", "例如 /sdcard/test.txt")
         val content = args.str("content")
@@ -63,6 +65,8 @@ class WriteFileTool : ToolExecutor {
 
 class EditFileTool : ToolExecutor {
     override val name = "edit_file"
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val path = args.requireStr("path", "例如 /sdcard/a.txt")
         val old = args.requireStr("old_string", "要被替换的原文，必须与文件逐字符一致（先 read_file 复制过来）")
@@ -173,6 +177,8 @@ class SearchFilesTool : ToolExecutor {
 
 class CreateDirTool : ToolExecutor {
     override val name = "create_dir"
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val path = args.requireStr("path", "例如 /sdcard/Download/Pictures")
         val f = File(path)
@@ -185,6 +191,8 @@ class CreateDirTool : ToolExecutor {
 class DeleteFileTool : ToolExecutor {
     override val name = "delete_file"
     override val dangerous = true
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val path = args.requireStr("path", "例如 /sdcard/tmp.txt")
         val recursive = args.bool("recursive")
@@ -200,6 +208,8 @@ class DeleteFileTool : ToolExecutor {
 
 class MoveFileTool : ToolExecutor {
     override val name = "move_file"
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val src = args.requireStr("src", "源路径，例如 /sdcard/a.txt")
         val dst = args.requireStr("dst", "目标路径，例如 /sdcard/Download/a.txt")
@@ -224,6 +234,8 @@ class MoveFileTool : ToolExecutor {
 
 class CopyFileTool : ToolExecutor {
     override val name = "copy_file"
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val src = args.requireStr("src", "源路径，例如 /sdcard/a.txt")
         val dst = args.requireStr("dst", "目标路径，例如 /sdcard/b.txt")
@@ -241,6 +253,8 @@ class CopyFileTool : ToolExecutor {
 
 class RenameFileTool : ToolExecutor {
     override val name = "rename_file"
+    // ⭐ 修复（问题 1）
+    override val parallelizable = false
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.IO) {
         val path = args.requireStr("path", "原完整路径，例如 /sdcard/a.txt")
         val newName = args.requireStr("new_name", "新文件名（不含路径分隔符），例如 b.txt")

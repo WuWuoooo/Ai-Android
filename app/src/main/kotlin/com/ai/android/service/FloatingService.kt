@@ -36,29 +36,23 @@ import com.ai.android.plugin.WidgetSlot
 import kotlin.math.abs
 
 /**
- * 悬浮窗前台服务（参考 AndLua 悬浮球布局：可拖动悬浮球 ↔ 展开面板）。
+ * 悬浮窗前台服务。
  *
- * 特性（beta5 增强）：
- * - 单一 overlay 实例：创建新进度悬浮窗前清除旧的（幂等）。
- * - 46dp 悬浮球可拖动；点击展开 200dp 面板；面板标题栏可拖动。
- * - ⭐ 实时输出区（折叠的 AI 思考 / 生成内容），随内容增加自动上下滚动（滚到底部）。
- * - ⭐ 悬浮球外观可由插件定制（PluginRegistry 提供 WIDGET 挂件渲染球）。
- * - 镜像小窗（MediaProjection 帧）+ Token 行 + "暂停 AI" 按钮。
+ * ⭐ 主题感知：style() 优先插件 THEME，否则按 settings.themeStyle() 走内置三套
+ *   （minimal / native / brutal）。
  */
 class FloatingService : Service() {
 
-        private var wm: WindowManager? = null
+    private var wm: WindowManager? = null
     private var rootView: LinearLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    // ⭐ 拖拽 / 点击状态（统一 handler，绑定到球 / 默认球 / 插件球 / 挂件 / 面板标题栏）
     @Volatile private var downRawX = 0f
     @Volatile private var downRawY = 0f
     @Volatile private var startLpX = 0
     @Volatile private var startLpY = 0
     @Volatile private var dragMoved = false
-    /** 统一触摸处理：子 view 若消费 DOWN，其 listener 仍先触发，保证球 / 挂件都能拖 / 点 */
     private val onDrag = View.OnTouchListener { _, ev -> handleDrag(ev) }
 
     private var lastState: AgentState = AgentState()
@@ -66,41 +60,34 @@ class FloatingService : Service() {
     var expanded = false
         private set
 
-    // 球容器（拖动 / 点击手柄）
     private lateinit var ballRow: LinearLayout
-    private lateinit var defaultBall: TextView      // 默认 "AI" 圆球（无插件时显示）
-    private val pluginBallViews = mutableListOf<View>()  // 插件定制球
+    private lateinit var defaultBall: TextView
+    private val pluginBallViews = mutableListOf<View>()
 
-    // 面板
-        private lateinit var panelView: LinearLayout
+    private lateinit var panelView: LinearLayout
     private lateinit var progressText: TextView
     private lateinit var toolText: TextView
     private lateinit var timeText: TextView
-    private lateinit var realTimeScroll: ScrollView   // ⭐ 实时输出滚动区
+    private lateinit var realTimeScroll: ScrollView
     private lateinit var realTimeText: TextView
     private lateinit var mirrorView: ImageView
     private lateinit var mirrorCaption: TextView
     private lateinit var tokenText: TextView
-        private lateinit var pauseBtn: TextView
-    private lateinit var closeBtn: TextView   // ⭐ 关闭悬浮窗按钮
+    private lateinit var pauseBtn: TextView
+    private lateinit var closeBtn: TextView
 
-    // ==================== ⭐ v1.2.0 #7.2：悬浮窗内直接回复 Agent ====================
     private lateinit var replyInput: EditText
     private lateinit var replySendBtn: TextView
 
-        /** 插件挂件（球旁的静态图标） */
     private val pluginWidgetViews = mutableListOf<View>()
     private val pluginSlots = mutableListOf<WidgetSlot>()
 
-    // ==================== ⭐ v1.2.0 #7.1：JS 插件动态挂件（原生 View 呈现）====================
     private val jsWidgetViews = mutableListOf<View>()
 
-    /** 实时输出缓冲（保留尾部，防内存膨胀） */
     @Volatile private var reasoningBuffer = ""
     @Volatile private var contentBuffer = ""
     private val MAX_RT = 3_000
 
-    /** overlay 视图是否已就绪（lateinit 视图可安全访问） */
     @Volatile private var overlayReady = false
 
     override fun onCreate() {
@@ -119,24 +106,16 @@ class FloatingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-        override fun onDestroy() {
-        // ⭐ 修复"点关闭后悬浮窗卡死"：旧实现用 handler.post 延迟移除 overlay，
-        //    服务销毁后该 runnable 常执行不到 → 残留窗口卡死。改为同步移除 + 已置空。
+    override fun onDestroy() {
         removeOverlaySync()
         super.onDestroy()
     }
 
-    /**
-     * ⭐ 主线程同步移除全部 overlay 视图并停止服务。
-     * Service 的所有方法都在主线程执行，故可直接操作 wm.removeView，无需 handler.post。
-     * 幂等：rootView / 子 view 已移除时重复调用安全。
-     */
     fun close() {
         removeOverlaySync()
         stopSelf()
     }
 
-    /** 同步拆除 overlay（关闭按钮 / onDestroy 共用） */
     private fun removeOverlaySync() {
         isRunning = false
         if (instance === this) instance = null
@@ -179,15 +158,12 @@ class FloatingService : Service() {
         }
     }
 
-        private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-        /**
-     * ⭐ v1.1.0 #3：按 style 的 ballShape / ballSize / ballIcon / ballBg 构建悬浮球背景。
-     *  - ballIcon 非空且文件存在 → 用插件自带 PNG 图标（非仅 tint）
-     *  - ballShape：circle（圆）/ rounded（圆角矩形）/ square（方块）/ capsule（胶囊）
+    /**
+     * 构造悬浮球背景。
      */
-    private fun ballDrawable(s: com.ai.android.plugin.FloatingStyle): android.graphics.drawable.Drawable {
-                // 优先：插件自带图标（相对插件目录）
+    private fun ballDrawable(s: FloatingStyle): android.graphics.drawable.Drawable {
         if (s.ballIcon.isNotBlank()) {
             val host = com.ai.android.MainApp.instance.pluginRegistry
             val pluginId = host.activeThemePluginId()
@@ -213,22 +189,33 @@ class FloatingService : Service() {
             "capsule" -> dp(s.ballSize).toFloat() / 2f
             "rounded" -> (dp(s.ballSize).toFloat() * 0.28f)
             "square" -> 0f
-            else -> dp(s.ballSize).toFloat() / 2f  // circle
+            else -> dp(s.ballSize).toFloat() / 2f
+        }
+        // ⭐ brutal 风格给球加黑边
+        if (s.panelStrokeWidth > 0 && s.ballShape == "rounded") {
+            gd.setStroke(dp(s.panelStrokeWidth), s.panelStrokeColor)
         }
         return gd
     }
 
-    /** ⭐ 当前生效的悬浮窗样式（首个 THEME 插件；无则 AndLua 默认白卡风格） */
-    private fun style(): FloatingStyle =
-        runCatching { MainApp.instance.pluginRegistry.activeFloatingStyle }.getOrDefault(FloatingStyle.DEFAULT)
-
     /**
-     * 构建 overlay。
-     * ⭐ 单一实例保证：rootView 已存在则先移除旧的再重建（"创建新进度悬浮窗前清除上一个"）。
+     * ⭐ 主题感知的悬浮窗样式：
+     *   1. 插件 THEME 有非默认样式 → 用插件
+     *   2. 否则按 settings.themeStyle() 走内置三套（minimal/native/brutal）
      */
+    private fun style(): FloatingStyle {
+        val plugin = runCatching { MainApp.instance.pluginRegistry.activeFloatingStyle }.getOrNull()
+        if (plugin != null && plugin != FloatingStyle.DEFAULT) return plugin
+        val preset = runCatching { MainApp.instance.settings.themeStyle() }.getOrDefault("minimal")
+        return when (preset) {
+            "native" -> FloatingStyle.NATIVE
+            "brutal" -> FloatingStyle.BRUTAL
+            else -> FloatingStyle.MINIMAL
+        }
+    }
+
     private fun addOverlay() {
         if (!Settings.canDrawOverlays(this)) return
-        // 清除上一个 overlay（幂等去重）
         if (rootView != null) {
             runCatching {
                 pluginWidgetViews.forEach { v -> if (v.parent != null) (v.parent as? ViewGroup)?.removeView(v) }
@@ -239,16 +226,12 @@ class FloatingService : Service() {
             overlayReady = false
         }
 
-                val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         wm = windowManager
 
-                // ⭐ 插件可定制的悬浮窗样式（默认 AndLua MyApp1 白卡风格；THEME 插件可覆盖）
         val s = style()
-
-        // ⭐ v1.1.0 #3：悬浮球尺寸 / 形状（ballSize / ballShape），旧插件无这些字段时回默认
         val ballSize = s.ballSize.coerceIn(24, 96)
 
-        // ---- 默认悬浮球（尺寸/形状可被插件定制；无插件时显示）----
         defaultBall = TextView(this).apply {
             textSize = 16f
             gravity = Gravity.CENTER
@@ -259,7 +242,6 @@ class FloatingService : Service() {
             isClickable = true
         }
 
-        // ---- 球容器：默认球 + 插件球（横向排列，整体作为拖动 / 点击手柄）----
         ballRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -268,32 +250,32 @@ class FloatingService : Service() {
         renderPluginBall()
         renderPluginWidgets()
 
-                // ---- 面板 ----
-                panelView = LinearLayout(this).apply {
+        // ---- 面板 ----
+        panelView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // ⭐ 默认 AndLua 白卡（圆角 + 白底）；THEME 插件可改色
             val bg = GradientDrawable()
             bg.cornerRadius = dp(s.cornerRadius).toFloat()
             bg.setColor(s.panelBg)
-            // ⭐ v1.2.0 #7.3：描边层级（比背景稍深的 1dp 边，营造卡片悬浮感）
-            bg.setStroke(dp(1), s.divider)
+            // ⭐ 描边：brutal 时 2dp 黑边
+            if (s.panelStrokeWidth > 0) {
+                bg.setStroke(dp(s.panelStrokeWidth), s.panelStrokeColor)
+            }
             background = bg
             setPadding(dp(12), dp(10), dp(12), dp(10))
             visibility = View.GONE
         }
 
-        // 标题栏（可拖动手柄 + 状态 + 收起 / 关闭）
         val titleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val panelTitleText = TextView(this).apply {
             textSize = 14f; setTextColor(s.panelText); text = s.panelTitle
-                        typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.DEFAULT_BOLD
         }
         progressText = TextView(this).apply {
             textSize = 13f; setTextColor(s.panelText); text = "就绪"
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f) // weight=1 占满
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
         val collapseBtn = TextView(this).apply {
             textSize = 15f
@@ -305,7 +287,6 @@ class FloatingService : Service() {
         titleBar.addView(progressText)
         titleBar.addView(collapseBtn)
 
-                // ⭐ 实时输出滚动区（折叠的 AI 思考 / 生成，随内容增长自动滚底）
         realTimeText = TextView(this).apply {
             textSize = 11f
             setTextColor(s.realtimeText)
@@ -317,12 +298,12 @@ class FloatingService : Service() {
             addView(realTimeText)
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            visibility = View.GONE   // 无内容时隐藏
+            visibility = View.GONE
         }
         val rtLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(180))
         realTimeScroll.layoutParams = rtLp
 
-                toolText = TextView(this).apply {
+        toolText = TextView(this).apply {
             textSize = 11f; setTextColor(s.panelTextSecondary); text = ""
         }
         timeText = TextView(this).apply {
@@ -330,12 +311,11 @@ class FloatingService : Service() {
         }
         tokenText = TextView(this).apply {
             textSize = 11f; setTextColor(s.accent)
-                        typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.DEFAULT_BOLD
             text = ""
             visibility = View.GONE
         }
 
-        // 镜像小窗（200×300dp，默认隐藏；AI 操控手机时显示）
         mirrorView = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             visibility = View.GONE
@@ -358,7 +338,7 @@ class FloatingService : Service() {
             setOnClickListener { MainApp.instance.agentStopCallback?.invoke() }
         }
 
-                pauseBtn = TextView(this).apply {
+        pauseBtn = TextView(this).apply {
             textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(s.accent)
@@ -367,7 +347,7 @@ class FloatingService : Service() {
             setOnClickListener { MainApp.instance.agentStopCallback?.invoke() }
         }
 
-                        panelView.addView(titleBar)
+        panelView.addView(titleBar)
         panelView.addView(realTimeScroll)
         panelView.addView(toolText)
         panelView.addView(timeText)
@@ -376,11 +356,8 @@ class FloatingService : Service() {
         panelView.addView(mirrorCaption)
         panelView.addView(pauseBtn)
 
-        // ==================== ⭐ v1.2.0 #7.2：悬浮窗内直接回复 Agent ====================
-        // 输入框 + 发送按钮：在 App 任何界面（甚至其它 App 前台）直接给 Agent 发指令，
-        // 复用 MainViewModel.send（经 AgentBridge 跨界面共享）。
         val s7 = style()
-                replyInput = EditText(this).apply {
+        replyInput = EditText(this).apply {
             hint = "回复 AI…"
             textSize = 12f
             setTextColor(s7.panelText)
@@ -388,12 +365,12 @@ class FloatingService : Service() {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
             maxLines = 2
             minLines = 1
-                        setPadding(dp(8), dp(5), dp(8), dp(5))
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(10).toFloat()
                 setColor(s7.panelBg)
-                setStroke(dp(1), s7.divider)   // 用描边把输入区与面板区分开
+                setStroke(dp(1), s7.divider)
             }
             background = bg
             isFocusableInTouchMode = true
@@ -402,8 +379,6 @@ class FloatingService : Service() {
             ).also { it.topMargin = dp(6) }
         }
 
-        // ⭐ overlay 默认 FLAG_NOT_FOCUSABLE 无法弹键盘：输入框获焦时临时去掉该 flag，
-        //    失焦时恢复（保证拖动 / 点击其它 view 不受影响）。
         replyInput.setOnFocusChangeListener { _, hasFocus ->
             val p = params ?: return@setOnFocusChangeListener
             val root = rootView ?: return@setOnFocusChangeListener
@@ -433,12 +408,11 @@ class FloatingService : Service() {
                 val txt = replyInput.text.toString().trim()
                 if (txt.isEmpty()) return@setOnClickListener
                 replyInput.setText("")
-                // 跨界面/跨进程发给 Agent（同进程共享 MainViewModel）
                 com.ai.android.AgentBridge.postMessage(txt)
             }
         }
 
-                val replyRow = LinearLayout(this).apply {
+        val replyRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val inputLp = LinearLayout.LayoutParams(0, -2, 1f)
@@ -448,19 +422,17 @@ class FloatingService : Service() {
         }
         panelView.addView(replyRow)
 
-        // ⭐ 关闭悬浮窗按钮（常驻直到用户手动关闭或 App 被杀）
         closeBtn = TextView(this).apply {
             textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(0xFFE08080.toInt())
             text = "✕ 关闭悬浮窗"
             isClickable = true
-            setOnClickListener { close() }   // ⭐ 主线程同步移除 overlay + stopSelf，避免卡死
+            setOnClickListener { close() }
             setPadding(0, dp(6), 0, 0)
         }
         panelView.addView(closeBtn)
 
-        // ---- 根容器 ----
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -486,8 +458,6 @@ class FloatingService : Service() {
             y = dp(300)
         }
 
-                // 拖动 / 点击手柄：统一 onDrag 绑到球容器、默认球、标题栏（插件球/挂件在 render* 里再绑）
-        // ⭐ 子 view 设了 isClickable 会消费 DOWN，故必须逐个子 view 也绑，否则拖不动 / 点不开
         ballRow.setOnTouchListener(onDrag)
         defaultBall.setOnTouchListener(onDrag)
         titleBar.setOnTouchListener(onDrag)
@@ -498,39 +468,36 @@ class FloatingService : Service() {
         overlayReady = true
     }
 
-    /** ⭐ 悬浮球外观由插件定制：有启用 WIDGET 的插件则渲染插件球（隐藏默认球） */
     private fun renderPluginBall() {
         pluginBallViews.forEach { v -> if (v.parent != null) (v.parent as? ViewGroup)?.removeView(v) }
         pluginBallViews.clear()
         if (!::ballRow.isInitialized) return
         val ctx = this
         val slots = runCatching { MainApp.instance.pluginRegistry.allWidgets() }.getOrDefault(emptyList())
-        val ballSlot = slots.firstOrNull()   // 首个插件作为球
+        val ballSlot = slots.firstOrNull()
         if (ballSlot != null) {
             val v = runCatching { ballSlot.render(ctx) { toggleExpand(true) } }.getOrNull()
-                        if (v != null) {
+            if (v != null) {
                 v.layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-                v.setOnTouchListener(onDrag)   // ⭐ 插件球也要可拖 / 点
+                v.setOnTouchListener(onDrag)
                 ballRow.addView(v)
                 pluginBallViews.add(v)
-                defaultBall.visibility = View.INVISIBLE   // 有插件球时隐藏默认球
+                defaultBall.visibility = View.INVISIBLE
                 runCatching { ballSlot.onBind(Bundle()) }
             }
         }
     }
 
-    /** 插件挂件区：从 PluginRegistry 取已启用的静态挂件渲染进球旁 */
     private fun renderPluginWidgets() {
         pluginWidgetViews.forEach { v -> if (v.parent != null) (v.parent as? ViewGroup)?.removeView(v) }
         pluginWidgetViews.clear()
         pluginSlots.clear()
         val slots = runCatching { MainApp.instance.pluginRegistry.allWidgets() }.getOrDefault(emptyList())
-        // 首个插件已用作球，其余作为球旁挂件
         slots.drop(1).forEach { slot ->
             val v = runCatching { slot.render(this) { toggleExpand(true) } }.getOrNull()
-                        if (v != null) {
+            if (v != null) {
                 pluginWidgetViews.add(v)
-                v.setOnTouchListener(onDrag)   // ⭐ 挂件也可拖 / 点（点击展开面板）
+                v.setOnTouchListener(onDrag)
                 ballRow.addView(v, LinearLayout.LayoutParams(dp(44), dp(44)).also {
                     val p = dp(6); it.setMargins(0, 0, p, 0)
                 })
@@ -539,11 +506,9 @@ class FloatingService : Service() {
         }
     }
 
-            /** 插件导入 / 删除 / 启停后重建球 + 挂件区 + 重新应用样式（设置页调用） */
     fun rebuildWidgets() {
         handler.post {
             if (!overlayReady) return@post
-            // ⭐ 重新应用插件样式（THEME 插件变更后热更新球 / 面板配色）
             runCatching {
                 renderPluginBall()
                 renderPluginWidgets()
@@ -553,23 +518,30 @@ class FloatingService : Service() {
         }
     }
 
-    /** ⭐ 短期待办 5：屏幕旋转 / 尺寸变化后重新 clamp 悬浮窗位置（被 MainActivity.onConfigurationChanged 调用） */
     fun reclamp() {
         handler.post {
             runCatching { clampToScreen() }
         }
     }
 
-    /** 插件样式变更后，对已存在的球 / 面板重新配色（无需重建 overlay） */
+    /**
+     * ⭐ 样式变更后对已存在的球 / 面板重新配色。
+     */
     private fun applyStyleRecolor() {
         if (!::defaultBall.isInitialized) return
         val s = style()
-                runCatching {
+        runCatching {
             defaultBall.setTextColor(s.ballText)
-            // ⭐ v1.1.0 #3：球形状/尺寸/图标变了也要重建背景（不只是重配色）
             defaultBall.background = ballDrawable(s)
             (panelView.background as? GradientDrawable)?.let {
-                it.setColor(s.panelBg); it.cornerRadius = dp(s.cornerRadius).toFloat()
+                it.setColor(s.panelBg)
+                it.cornerRadius = dp(s.cornerRadius).toFloat()
+                // ⭐ 同步描边
+                if (s.panelStrokeWidth > 0) {
+                    it.setStroke(dp(s.panelStrokeWidth), s.panelStrokeColor)
+                } else {
+                    it.setStroke(0, android.graphics.Color.TRANSPARENT)
+                }
             }
             progressText.setTextColor(s.panelText)
             toolText.setTextColor(s.panelTextSecondary)
@@ -580,25 +552,17 @@ class FloatingService : Service() {
         }
     }
 
-        private fun toggleExpand(expand: Boolean) {
+    private fun toggleExpand(expand: Boolean) {
         expanded = expand
         handler.post {
             if (!overlayReady) return@post
-            // ⭐ ballRow / panelView 用 GONE（不占布局空间），避免展开面板后
-            //    root 宽度突增导致定位偏移（之前 INVISIBLE 还占位 → 拖不动/溢出）
             ballRow.visibility = if (expand) View.GONE else View.VISIBLE
             panelView.visibility = if (expand) View.VISIBLE else View.GONE
-            // ⭐ 宽高变化后 post 回调，clamp 到屏幕内再 updateViewLayout
             rootView?.post { clampToScreen() }
             render(lastState)
         }
     }
 
-    /**
-     * ⭐ 把 params.x/y clamp 到屏幕内（rootView 宽高变化 / 旋转后调用）。
-     * 修复：面板展开（宽度 ~210dp）后若 x 超出屏幕右边界，整个悬浮窗无法拖动
-     *       —— 因为 updateViewLayout 时 root 的宽高已变，x 相对旧值偏移导致落空。
-     */
     private fun clampToScreen() {
         val root = rootView ?: return
         val p = params ?: return
@@ -634,7 +598,6 @@ class FloatingService : Service() {
                 tokenText.visibility = View.VISIBLE
                 tokenText.text = lastTokenText
             }
-            // ⭐ 向已注册的插件球 / 挂件推送数据（beta5 静态挂件可消费 token / 状态）
             val bundle = Bundle().apply {
                 putString("state", state.status.name)
                 putString("progress", state.progressText)
@@ -646,13 +609,11 @@ class FloatingService : Service() {
                 if (slot != null) runCatching { slot.onBind(bundle) }
             }
             pluginSlots.forEach { slot -> runCatching { slot.onBind(bundle) } }
-            // 实时输出区：有内容才显示
             val hasRt = reasoningBuffer.isNotEmpty() || contentBuffer.isNotEmpty()
             realTimeScroll.visibility = if (hasRt) View.VISIBLE else View.GONE
         }
     }
 
-    /** 设置页 / ViewModel 推送 Token 统计文本到悬浮窗面板 */
     private fun setTokenText(text: String) {
         lastTokenText = text
         handler.post {
@@ -662,9 +623,6 @@ class FloatingService : Service() {
         }
     }
 
-    // ==================== ⭐ 实时输出（折叠 AI 思考 / 生成，自动滚底）====================
-
-    /** 追加思考 / 生成增量到实时区（由 MainViewModel 在 delta 事件调用） */
     private fun pushStreaming(kind: String, fragment: String) {
         if (fragment.isEmpty()) return
         if (kind == "reasoning") {
@@ -675,7 +633,6 @@ class FloatingService : Service() {
         refreshRealTime()
     }
 
-    /** 复位实时输出区（新一轮消息开始时调用） */
     private fun resetStreaming() {
         reasoningBuffer = ""
         contentBuffer = ""
@@ -695,20 +652,13 @@ class FloatingService : Service() {
             val has = sb.isNotEmpty()
             realTimeText.text = sb.toString()
             realTimeScroll.visibility = if (has) View.VISIBLE else View.GONE
-            // ⭐ 内容增加 → 自动滚到底部
             realTimeScroll.post {
                 realTimeScroll.fullScroll(ScrollView.FOCUS_DOWN)
             }
         }
     }
 
-        /**
-     * 统一拖拽 / 点击处理。
-     * ⭐ 关键：挂在球、默认球、插件球、挂件、面板标题栏上（而非仅父容器 ballRow），
-     * 因为 isClickable 的子 View 会消费 ACTION_DOWN，导致父容器 OnTouchListener 收不到后续 MOVE/UP。
-     * 返回 true 阻止子 view 自身 onClick，点击逻辑统一在 ACTION_UP 处理。
-     */
-        private fun handleDrag(ev: MotionEvent): Boolean {
+    private fun handleDrag(ev: MotionEvent): Boolean {
         val w = wm ?: return false
         val root = rootView ?: return false
         val p = params ?: return false
@@ -727,8 +677,6 @@ class FloatingService : Service() {
                     val dm = resources.displayMetrics
                     val rootW = root.width
                     val rootH = root.height
-                    // ⭐ 边界 clamp（参考 AndLua 悬浮球示例的 math.max/min）：
-                    //    拖到屏幕外会被弹回边界，保证悬浮窗始终可继续拖
                     val maxX = if (rootW > 0) (dm.widthPixels - rootW).coerceAtLeast(0) else 0
                     val maxY = if (rootH > 0) (dm.heightPixels - rootH).coerceAtLeast(0) else 0
                     p.x = (startLpX + dx.toInt()).coerceIn(0, maxX)
@@ -737,15 +685,13 @@ class FloatingService : Service() {
                 }
                 return true
             }
-                        MotionEvent.ACTION_UP -> {
+            MotionEvent.ACTION_UP -> {
                 val wasMoved = dragMoved
                 dragMoved = false
                 if (!wasMoved) {
-                    // ⭐ v1.2.0-next #1：球点击 → 推事件给 JS 插件 + 展开面板
                     runCatching { pushBallClickToJs(p.x.toFloat(), p.y.toFloat()) }
                     toggleExpand(!expanded)
                 } else {
-                    // ⭐ v1.2.0-next #1：球拖拽结束 → 推事件给 JS 插件
                     runCatching { pushBallDragEndToJs(p.x.toFloat(), p.y.toFloat()) }
                 }
                 return true
@@ -758,7 +704,6 @@ class FloatingService : Service() {
         }
     }
 
-        /** 镜像帧到达（MirrorService 推送） */
     private fun showFrame(bmp: Bitmap) {
         handler.post {
             if (!overlayReady) return@post
@@ -766,25 +711,19 @@ class FloatingService : Service() {
         }
     }
 
-    /**
-     * ⭐ v1.2.0 #7.1：JS 插件请求渲染动态挂件 → 用原生 TextView 呈现到球区。
-     *  - 每个 JS 插件最多一个挂件（重复请求替换旧挂件）
-     *  - colorHex 形如 "#2563EB"（可选）；无则用默认球色
-     */
     fun renderJsWidget(text: String, colorHex: String?) {
         handler.post {
             if (!::ballRow.isInitialized) return@post
             val s = style()
-            // 清掉上一个 JS 挂件（简化：全清；后续可按 pluginId 精确定位）
             jsWidgetViews.forEach { v -> if (v.parent != null) (v.parent as? ViewGroup)?.removeView(v) }
             jsWidgetViews.clear()
-                        val color = colorHex?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() } ?: s.ballBg
+            val color = colorHex?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() } ?: s.ballBg
             val label2 = text.take(2)
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(color)
             }
-                        val tv = TextView(this).apply {
+            val tv = TextView(this).apply {
                 textSize = 12f
                 gravity = Gravity.CENTER
                 setTextColor(s.ballText)
@@ -796,24 +735,15 @@ class FloatingService : Service() {
             tv.layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).also {
                 it.setMargins(dp(6), 0, 0, 0)
             }
-            tv.setOnTouchListener(onDrag)   // ⭐ JS 挂件也可拖 / 点
+            tv.setOnTouchListener(onDrag)
             ballRow.addView(tv)
             jsWidgetViews.add(tv)
-            // 清边避免溢出
             runCatching { rootView?.post { clampToScreen() } }
         }
     }
 
-            // ==================== ⭐ v1.2.0-next #1：JS 插件动态创建/更新悬浮球本身 ====================
-
-    /** 记录当前 JS 球对应的 pluginId（球点击时用来推事件给 JS） */
     @Volatile private var jsBallPluginId: String? = null
 
-    /**
-     * ⭐ v1.2.0-next #1：JS 插件动态更新悬浮球外观。
-     * 直接改 defaultBall 的文字/颜色/大小/形状（不新建 view，避免 layout 变化导致拖拽偏移）。
-     * json 字段：text/color/size/shape；"remove":true 时调用 [restoreDefaultBall]。
-     */
     fun applyJsBall(json: kotlinx.serialization.json.JsonObject, pluginId: String) {
         handler.post {
             if (!::defaultBall.isInitialized) return@post
@@ -863,7 +793,6 @@ class FloatingService : Service() {
         }
     }
 
-    /** ⭐ v1.2.0-next #1：恢复默认 "AI" 球（JS 球 remove 时调用） */
     fun restoreDefaultBall() {
         handler.post {
             if (!::defaultBall.isInitialized) return@post
@@ -881,10 +810,6 @@ class FloatingService : Service() {
         }
     }
 
-    /**
-     * ⭐ v1.2.0-next #1：球点击时向 JS 插件推送事件。
-     * 在 handleDrag 的 ACTION_UP 分支（非拖动 = 点击）里调用。
-     */
     fun pushBallClickToJs(x: Float, y: Float) {
         val pid = jsBallPluginId ?: return
         runCatching {
@@ -895,7 +820,6 @@ class FloatingService : Service() {
         }
     }
 
-    /** ⭐ v1.2.0-next #1：球拖拽结束时向 JS 插件推送事件 */
     fun pushBallDragEndToJs(x: Float, y: Float) {
         val pid = jsBallPluginId ?: return
         runCatching {
@@ -906,7 +830,6 @@ class FloatingService : Service() {
         }
     }
 
-    /** 显示 / 隐藏镜像小窗（自动展开面板） */
     private fun setMirrorPanel(visible: Boolean) {
         handler.post {
             if (!overlayReady) return@post
@@ -925,7 +848,6 @@ class FloatingService : Service() {
             private set
 
         fun start(context: Context) {
-            // ⭐ 单一实例：已运行则不重复创建（新进度悬浮窗由 onStartCommand 更新，不会叠加）
             if (isRunning) { runCatching { context.startService(Intent(context, FloatingService::class.java)) } ; return }
             val i = Intent(context, FloatingService::class.java)
             runCatching {
@@ -943,27 +865,20 @@ class FloatingService : Service() {
 
         fun showWork(context: Context, state: AgentState) {
             if (state.isActive && !isRunning) start(context)
-            // ⭐ 新一轮工作：复位实时输出区
             instance?.resetStreaming()
             update(state)
         }
 
-                fun finishWork(context: Context, state: AgentState) {
+        fun finishWork(context: Context, state: AgentState) {
             update(state)
-            // ⭐ v1.0.0-Stable：悬浮窗常驻，AI 完成后不再自动消失，
-            //    一直保留到用户手动点「✕ 关闭悬浮窗」或 App 被系统回收。
-            //    新一轮工作到来时 showWork() 会幂等刷新同一实例。
         }
 
-        /** 推送 Token 文本到面板（MainViewModel 在 Stats 事件调用） */
         fun setTokenText(context: Context, text: String) { instance?.setTokenText(text) }
 
-        /** ⭐ 推送 AI 实时思考 / 生成增量（kind = "reasoning" / "content"） */
         fun pushStreaming(context: Context, kind: String, fragment: String) {
             instance?.pushStreaming(kind, fragment)
         }
 
-        /** 显示 / 隐藏镜像小窗（ToolRegistry 在 accessibility_control 前后调用） */
         fun setMirrorActive(context: Context, active: Boolean) {
             val ins = instance
             if (active && ins == null) start(context)
@@ -971,40 +886,24 @@ class FloatingService : Service() {
             if (active) MirrorService.start(context) else MirrorService.stop(context)
         }
 
-        /** 镜像帧推送入口（MirrorService 调用） */
         fun pushFrame(bmp: Bitmap) { instance?.showFrame(bmp) }
 
-                /** 插件导入 / 启停 / 删除后重建球 + 挂件区（设置页调用） */
         fun rebuildWidgets(context: Context) {
             Handler(Looper.getMainLooper()).post { instance?.rebuildWidgets() }
         }
 
-        // ==================== ⭐ v1.2.0 #7.1：JS 插件读取宿主数据 ====================
-
-        /** JS 插件 `host.getTokenText()`：当前悬浮窗 Token 文本快照 */
         fun tokenTextSnapshot(): String =
             instance?.let { runCatching { it.lastTokenText }.getOrDefault("") } ?: ""
 
-        /** JS 插件 `host.getAgentState()`：当前 Agent 状态（IDLE/THINKING/...） */
         fun stateSnapshot(): String =
             instance?.let { runCatching { it.lastState.status.name }.getOrDefault("IDLE") } ?: "IDLE"
 
-                /** ⭐ JS 插件渲染的动态挂件 → 宿主用原生 View 呈现（FloatingService 在 addOverlay 注册） */
         var jsRenderWidgetHandler: ((pluginId: String, text: String, colorHex: String?) -> Unit)? = null
 
-                /** ⭐ v1.2.0 #7.1：JS 插件请求渲染动态挂件（经原生 View 呈现到球区） */
         fun pushJsWidget(context: Context, text: String, colorHex: String?) {
             Handler(Looper.getMainLooper()).post { instance?.renderJsWidget(text, colorHex) }
         }
 
-                // ==================== ⭐ v1.2.0-next #1：JS 插件动态创建/更新悬浮球本身 ====================
-
-        /**
-         * ⭐ v1.2.0-next #1：JS 插件动态创建/更新悬浮球。
-         * 解析 jsonStr 并重建球外观（替代插件球），事件回调推给 JS。
-         * jsonStr 示例：{"text":"🔥","color":"#FF5722","size":52,"shape":"circle"}
-         * 特殊：{"remove":true} 恢复默认 "AI" 球。
-         */
         fun renderJsBall(context: Context, pluginId: String, jsonStr: String) {
             Handler(Looper.getMainLooper()).post {
                 val ins = instance ?: return@post

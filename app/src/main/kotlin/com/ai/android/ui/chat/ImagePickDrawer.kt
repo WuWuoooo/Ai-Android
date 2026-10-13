@@ -26,7 +26,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,19 +36,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * ⭐ v1.2.0-next #14 + #9：自绘全量相册（MediaStore 主路，替代系统 GetContent SAF 与旧的 File 双目录扫描）。
- *
- * 规格（QQ 发图体验）：
- *  - 顶部 Tab：「全部」（MediaStore 全量，跨 /sdcard/Pictures、/DCIM、/Download 等任意目录）
- *               「相册」（按 MediaStore BUCKET_DISPLAY_NAME 分组筛选）
- *  - 网格：LazyVerticalGrid 3 列，缩略图用 Coil（AsyncImage）加载 MediaStore URI
- *  - 勾选角标 + 底部「取消 / 确认（已选 N）」
- *  - 确认时读原图字节 → base64(NO_WRAP) → onConfirm
- *  - 权限：API 33+ 需 READ_MEDIA_IMAGES；旧版 READ_EXTERNAL_STORAGE。缺权限时给申请按钮
- */
 private data class ImgItem(val id: Long, val uri: Uri, val album: String, val dateTaken: Long)
 
+/**
+ * 自绘全量相册。
+ *
+ * ⭐ 颜色修复：使用主题色 surface（亮色=白，暗色=深），不再硬编码 #FFFFFF。
+ */
 @Composable
 fun ImagePickDrawer(
     onDismiss: () -> Unit,
@@ -58,15 +51,13 @@ fun ImagePickDrawer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // ---------- 权限 ----------
     fun mediaPerm(): String =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES
         else Manifest.permission.READ_EXTERNAL_STORAGE
 
-        // ---------- 数据（先声明，供 loadImages / requestPermission 使用，避免前向引用） ----------
     var images by remember { mutableStateOf<List<ImgItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf(0) }      // 0=全部  1=相册
+    var tab by remember { mutableStateOf(0) }
     var album by remember { mutableStateOf<String?>("全部") }
     var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
 
@@ -87,7 +78,6 @@ fun ImagePickDrawer(
         if (ok) loadImages(context, { images = it })
     }
 
-
     LaunchedEffect(Unit) {
         if (permGranted) loadImages(context, { images = it })
     }
@@ -106,10 +96,9 @@ fun ImagePickDrawer(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        tonalElevation = 6.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(Modifier.heightIn(max = 440.dp)) {
-            // ===== 顶部：Tab（全部 / 相册）+ 关闭 =====
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -131,7 +120,6 @@ fun ImagePickDrawer(
                 }
             }
 
-            // ===== 相册筛选 chip（仅「相册」Tab 显示，可横向滚动）=====
             if (tab == 1) {
                 Row(
                     Modifier
@@ -149,12 +137,10 @@ fun ImagePickDrawer(
                     }
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // ===== 主体 =====
             when {
                 !permGranted -> {
-                    // 缺权限：提示 + 申请按钮
                     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.PhotoLibrary, null, Modifier.size(40.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -190,7 +176,6 @@ fun ImagePickDrawer(
                     ) {
                         items(visible, key = { it.id }) { item ->
                             MediaGridItem(
-                                context = context,
                                 item = item,
                                 selected = selected.contains(item.id),
                                 onToggle = {
@@ -203,8 +188,7 @@ fun ImagePickDrawer(
                 }
             }
 
-            HorizontalDivider()
-            // ===== 底部操作栏 =====
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                 TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text("取消", fontSize = 14.sp)
@@ -237,10 +221,8 @@ fun ImagePickDrawer(
     }
 }
 
-/** 单个网格单元：Coil 缩略图 + 勾选角标。 */
 @Composable
 private fun MediaGridItem(
-    context: Context,
     item: ImgItem,
     selected: Boolean,
     onToggle: () -> Unit,
@@ -255,7 +237,7 @@ private fun MediaGridItem(
             )
             .clickable { onToggle() },
     ) {
-                AsyncImage(
+        AsyncImage(
             model = item.uri,
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
@@ -267,7 +249,7 @@ private fun MediaGridItem(
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
                     .size(22.dp)
-                    .clip(RoundedCornerShape(50.dp))
+                    .clip(RoundedCornerShape(50))
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
             ) {
@@ -277,7 +259,6 @@ private fun MediaGridItem(
     }
 }
 
-/** 查 MediaStore 全量图片（跨目录、按拍摄时间倒序；缺权限时返回空）。 */
 private fun queryAllImages(ctx: Context): List<ImgItem> {
     val out = mutableListOf<ImgItem>()
     val proj = arrayOf(

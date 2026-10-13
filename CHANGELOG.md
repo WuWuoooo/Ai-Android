@@ -1,152 +1,112 @@
 # Changelog
 
-本文件记录 Ai Android 的正式版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [1.3.0] - 2026-10-13
+**versionCode 10**
+
+### Added
+- **Skill 系统**：导入 `.zip` 技能包（递归查找 `SKILL.md`）；新增 `list_skills` / `load_skill` 工具，AI 可读取技能说明并用终端运行其脚本。
+- **诊断页**：8 项环境自检（数据库 / Provider / 终端 / Skill / 插件 / 日志 / 权限 / Shizuku），流式展示，支持简化模式。
+- **CrashHandler**：未捕获异常写入 `filesDir/crash_last.txt`，诊断页可查看与复制。
+- **终端 Service 化**：前台 Service + `LocalBinder` 持有全部 PTY 会话，App 后台存活；多会话 Tab；会话元信息落 Room（`sessions` 表）。
+- **语音 / 图片 / 视频气泡**：`generate_speech` / `generate_image` / `generate_video` 结构化输出后自动插入媒体气泡，语音支持进度条。
+- **多模态扩展**：新增 VIDEO / AUDIO / VIDEO_UNDERSTAND 能力；`generate_video` / `analyze_audio` / `analyze_video` 工具；所有 API 调用类工具支持 `extra_body` / `extra_headers` 自定义。
+- **本对话权限分级**：读写 / 设备 / 系统 / 完全访问 4 档；完全访问跳过全部 Guard 与审批。
+- **子代理后台模式**：`subagent background=true` 立即返回 taskId；新增 `subagent_status` / `subagent_result` / `subagent_list` 工具。
+- **中英双套提示词**：`AgentPrompts` 按当前语言输出系统提示词、标题总结、继续生成、上下文压缩。
+- 数据库启动自动备份到 `/sdcard/AiAndroid/backup/`（保留最近 3 份）。
+
+### Changed
+- 终端 HOME 从 `/sdcard` 迁到 `/data/data/com.ai.android/files/termux/home`（永远可写）。
+- 对话历史 / 插件 / 消息菜单统一为 `AnimatedPopup` + `AppMenuPanel`（三主题自适应）。
+- 所有可折叠面板箭头统一为 `KeyboardArrowRight` + 旋转动画。
+- 文件 / 图片选择器背景改用主题色（不再硬编码白色）。
+- `AppDatabase` v3 → v5（新增 `sessions` 表，清理遗留索引）。
+- `SettingsScreen` 分类：模型 / Agent / 界面 / 插件 / Harness / 系统 / 终端 / 对话 / 诊断 / 关于。
+
+### Fixed
+- **数据库"丢失"**：`MIGRATION_3_4` 多建索引导致 Room schema 校验失败抛异常被吞 → 删索引 + `MIGRATION_4_5` 清理 + 启动自动备份。
+- **项目记忆永远为空**：`MemoryStore.projectMemoryList` 漏拼 `PREFIX` 前缀。
+- **置顶 / 重命名 / 权限切换不生效**：改用 `.copy()` 生成新对象，`StateFlow` 才会发射。
+- **LaTeX 渲染失败**：`\textsf` / `\hspace` / `\(...\)` 命令预处理（长名优先 + 剥离 + 文本兜底）。
+- **诊断页闪退**：`LazyColumn` 的 item 内禁止嵌套 `verticalScroll`。
+- **诊断页返回键**：加 `BackHandler`，不再直接弹回聊天。
+- `ProviderManager` 缺 `subagent` 工具定义（AI 看不到工具）。
+- `runCatching { }` 内调用 suspend 函数导致编译失败 → 改 `try/catch`。
 
 ## [1.2.0] - 2026-10-05
 **versionCode 9**
 
-### Fixed
-- Shizuku 检测与提权：包名补全 `moe.shizuku.privileged.api` 等；sticky 监听；`Sui.init`；`isPreV11` 检查；user-service 真提权（uid 2000，突破沙箱读 `Android/data`）。
-- 工作流静默停：`StreamEvent.FinishInfo`；max_tokens 截断自动续写（≤3 轮）；4xx 保留 partial 重试。
-- 语音输入状态机：点-点模式；`begin()` 返回 Boolean；最低 500ms；权限/识别器错误 Toast；不静默。
-- 菜单问题：挤占布局、位置错误、无动画 → 全部改 material3 `DropdownMenu`（锚定触发控件右下、浮层不占布局、自带过渡）。
-- 文生图 404：新增 `ZhipuImageMultimodal`，归一化端点，响应 URL 下载转 base64。
-- TTS 无声：MiMo 音色白名单，默认空 voice，`SettingsRepository` 自动绑 MiMo。
-- 状态栏/导航栏与背景同色（`Theme.kt` SideEffect）。
-- 自定义 API 默认参数可删改（`extraParams` 分层初始化，`rowsToJson` 跳空 string）。
-- 编译修复：`AnimatedContent` 用 `togetherWith`；补 `}`；括号平衡；Coil `AsyncImage`；`align` 层级；extended 图标；`Popup` 无 `alignment`。
-
 ### Added
-- 语音输入 + 输入框重做（`VoiceInputController`，ASR 优先，系统 `SpeechRecognizer` 兜底）。
-- 上下文窗口字段（`contextWindow`，UI 可编辑）。
-- 对话历史侧边抽屉（搜索、分组、⋯ 菜单）。
-- 对话历史「项目」分区 + 项目独立记忆（`MemoryStore` 项目作用域）。
-- 自定义文件选择器底部抽屉（`FilePickDrawer`）。
-- 自绘图片选择器 `ImagePickDrawer`（MediaStore 全量，Coil 缩略图）。
-- 悬浮窗内直接回复（`AgentBridge`）。
-- JS 动态悬浮窗（`JsPluginRuntime`，`window.host.*`，`createBall`/`updateBall`/`removeBall`）。
-- 悬浮窗美化（描边、圆角、主题）。
-- 多模态 Agent 工具：`generate_image` / `generate_speech` / `analyze_image`。
-- 通用 `AppMenuPanel` / `AppDialog` 自绘菜单组件。
-- 对话草稿恢复、长对话秒开、空对话合并。
-- 过渡动画：抽屉、设置页、菜单（`animation:1.7.0`）。
+- 语音输入、上下文窗口字段、对话历史抽屉、项目分区 + 项目记忆。
+- 自绘文件 / 图片选择器；悬浮窗内直接回复；JS 动态悬浮窗。
+- 多模态工具：`generate_image` / `generate_speech` / `analyze_image`。
+- 自绘 `AppMenuPanel` / `AppDialog`；过渡动画。
+
+### Fixed
+- Shizuku 检测与提权（user-service 真提权）。
+- 工作流静默停（`FinishInfo` + max_tokens 自动续写）。
+- 菜单挤占布局 / 位置错误 → 全部改 material3 `DropdownMenu`。
+- 文生图 404、TTS 无声。
 
 ### Changed
-- 菜单自绘替换原生 `DropdownMenu`（模型切换、加号、历史⋯、多模态绑定、参数类型）。
-- 能力互斥：语音（TTS/ASR/REALTIME）与对话（CHAT/VISION/IMAGE/SEARCH）不能同选。
-- `versionCode 8 → 9`，`versionName "1.1.0" → "1.2.0"`。
-
-### Notes
-- 所有改动不 git commit，由维护者 RV2IDE 编译验证后手动上传。
-- Shizuku user-service 已实测打通。
+- `versionCode 8 → 9`，`versionName 1.1.0 → 1.2.0`。
 
 ## [1.1.0] - 2026-10-05
 **versionCode 8**
 
 ### Added
-- 请求体新手化：`ParamRow` + `PRESET_PARAMS` + JSON 双向同步。
-- 多语言 + 语言包导入：`I18nManager`，`applyLocale`，支持导入/清除。
-- 插件大升级：`FloatingStyle`、`ChatBubbleStyle`、`features`。
-- Shizuku 权限适配：官方 API + Provider，`run_shell_command` 自动回退沙箱。
-- 用户消息编辑 + 重新生成：`resendUserMessage`，「保存并重新生成」。
+- 请求体新手化（`ParamRow` 表单 / JSON 双向同步）。
+- 多语言 + 语言包导入（`I18nManager`）。
+- 插件升级（`FloatingStyle` / `ChatBubbleStyle` / `features`）。
+- 用户消息编辑 + 重新生成。
 
 ### Fixed
-- Agent 流式断流：网络类错误自动重试；重试耗尽保留 partial。
-- 底部 Ctrl/Alt toggle + 软键盘不生效：`@Volatile ctrlDown/altDown` 同步。
-
-### Changed
-- 管道版终端 Ctrl 按钮改纯文字 `PlainKey`。
-- 无障碍引导对话框。
-- 设置页文案接入 `stringResource`。
-- `versionCode 7 → 8`，`versionName "1.0.0-Stable" → "1.1.0"`。
+- Agent 流式断流自动重试；底部 Ctrl/Alt 无效。
 
 ## [1.0.0-Stable] - 2026-10-05
 **versionCode 7**
 
 ### Added
-- 完整 PTY 终端模块（`terminal-emulator` + `terminal-view`，NDK r29，`libtermux.so`）。
-- 终端交互化：Ctrl-C/D/Z、清屏、重启、`imePadding`。
-- pkg/apt 工具优化：`run_shell_command` 60s 上限提示，`terminal_exec` 120s 后台，`read_file` 二进制识别。
-- 悬浮窗常驻 + 关闭按钮。
-- 悬浮窗 AI 完成后拖不动修复。
-- 终端键盘弹起输入框不动修复。
-- AI 读二进制乱码修复。
-- AI terminal_read 输出残留修复。
-- AI 终端 pkg/长脚本卡 60s 修复。
-
-### Changed
-- `versionCode 6 → 7`，`versionName → "1.0.0-Stable"`。
-- `ProotRunner` 新增交互式 `buildInteractiveCommand()`。
-- `TerminalScreen` 新增 Ctrl 按钮行、`imePadding`，按 `terminalUsePty()` 分流。
-- `FloatingService` 面板加关闭按钮，`finishWork` 不自动 stop。
+- 完整 PTY 终端模块（NDK / `libtermux.so`）。
+- 终端交互化（Ctrl-C/D/Z、清屏、重启）。
+- pkg/apt 优化、AI 二进制识别、终端输出残留修复。
 
 ## [1.0.0-beta5] - 2026-10-04
 **versionCode 6**
 
 ### Added
-- AI 操控手机（后台操作 + 实时镜像）：`AiControlGuard`、`MirrorService`、`MediaProjectionBridge`。
-- 设置页「AI 操控」「Token 统计」「插件管理」卡片。
-- 插件接口抽象层（`PluginManifest` / `WidgetSlot` / `ThemeProvider` / `AgentEventHook` / `PluginRegistry`）。
-- 悬浮窗重做（AndLua 风格悬浮球 + 面板，实时输出滚动区）。
-- 悬浮球插件定制。
-- 折叠深度思考同步升级。
-- Termux 风格终端屏。
-- AI 自动总结标题开关。
-
-### Fixed
-- AI 自动总结标题时有时无：改为首轮结束并发触发 + 去重。
-- 终端按对话隔离：`TerminalSessionManager`。
-
-### Changed
-- `versionCode 5 → 6`，`versionName → "1.0.0-beta5"`。
-- `FloatingService` 重构，`Conversation` 加 `totalTokens()`。
+- AI 操控手机（后台 + 实时镜像）。
+- 插件接口抽象层。
+- 悬浮球 / 面板重做。
+- 终端按对话隔离。
 
 ## [1.0.0-beta4] - 2026-10-04
 **versionCode 5**
 
 ### Added
-- 对话导出/导入 JSON。
-- `terminal_exec` 自动重试。
-- Agent 参数：流式/HTTP 失败重试次数、上下文自动压缩轮次。
+- 对话导出 / 导入 JSON。
 - 音视频通话（GLM-4-Voice / GLM-Realtime）。
 - 多模态能力绑定 CALL。
 
 ### Fixed
-- 终端进程中途崩溃假超时。
-- 导出/导入 JSON 兼容两种格式。
 - HTTP 400 根因修复：`sanitizeToolMessages`。
-- 移除技能板块。
-
-### Changed
-- `versionCode 4 → 5`，`versionName → "1.0.0-beta4"`。
 
 ## [1.0.0-beta3] - 2026-10-03
 **versionCode 4**
 
 ### Added
-- GitHub 标准结构。
-- 内置终端常驻 shell。
-- 定时任务、长期记忆、LaTeX 渲染、Web 搜索。
-
-### Changed
-- `versionCode 2 → 4`。
-- Gradle 并行/缓存优化。
+- 内置终端常驻 shell、定时任务、长期记忆、LaTeX 渲染、Web 搜索。
 
 ## [1.0.0-beta2] - 2026-10-03
 **versionCode 2**
 
 ### Added
-- Agent 对话与工具执行核心。
-- 手机界面操控（无障碍）。
-- 多模型 Provider（OpenAI / Anthropic）。
-- Compose 聊天/终端/设置界面。
-
-### Changed
-- 根 `build.gradle` 插件配置（AGP 8.1.4 / Kotlin 1.9.22）。
+- Agent 对话与工具执行核心、手机操控、多模型 Provider、Compose UI。
 
 ## [1.0.0] - 2026-10-03
 **versionCode 1**
 
 ### Added
 - 项目初始版本。
-- 基础 Compose 架构与 MainApp / MainActivity 入口。

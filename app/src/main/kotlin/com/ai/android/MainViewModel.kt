@@ -6,10 +6,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.ai.android.agent.AgentEvent
+import com.ai.android.agent.ApprovalManager
+import com.ai.android.agent.ResultCache
+import com.ai.android.agent.SubAgentTaskStore
+import com.ai.android.agent.UserApprovalTokens
 import com.ai.android.model.AgentState
 import com.ai.android.model.ChatMessage
 import com.ai.android.model.Conversation
 import com.ai.android.model.Project
+import com.ai.android.model.SessionStats
 import com.ai.android.model.TokenEntry
 import com.ai.android.model.TokenExportReport
 import com.ai.android.model.TokenTotals
@@ -28,16 +33,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainViewModel(private val app: MainApp) : ViewModel() {
 
     private val TAG = "MainViewModel"
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    /** ⭐ 单条对话 payload 的字符上限；超过则剥离图片，避免读取时超过 CursorWindow 限制 */
     private val maxPayloadChars = 1_000_000
-
-    /** ⭐ 分块读取 payload 的块大小（字符），保守取 40 万，避免超过 ~2MB 的 CursorWindow */
     private val payloadChunkSize = 400_000
 
     private val _conversations = MutableStateFlow<List<Conversation>>(emptyList())
@@ -52,27 +55,27 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
     private val _agentState = MutableStateFlow(AgentState())
     val agentState: StateFlow<AgentState> = _agentState
 
+    private val _sessionStats = MutableStateFlow(SessionStats())
+    val sessionStats: StateFlow<SessionStats> = _sessionStats
+
     private val _attachedFiles = MutableStateFlow<List<String>>(emptyList())
     val attachedFiles: StateFlow<List<String>> = _attachedFiles
 
     private val _attachedImages = MutableStateFlow<List<String>>(emptyList())
     val attachedImages: StateFlow<List<String>> = _attachedImages
 
-        private val _memoryList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    private val _memoryList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val memoryList: StateFlow<List<Pair<String, String>>> = _memoryList
 
-    /** ⭐ 第五轮 #4：当前选中项目的项目记忆列表（设置页「项目管理」卡片用） */
     private val _projectMemoryList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val projectMemoryList: StateFlow<List<Pair<String, String>>> = _projectMemoryList
 
     private val _quotedMessage = MutableStateFlow<ChatMessage?>(null)
     val quotedMessage: StateFlow<ChatMessage?> = _quotedMessage
 
-    /** ⭐ 上一条 assistant 消息是否"未完整结束"（用于控制"继续生成"按钮） */
     private val _lastGenerationIncomplete = MutableStateFlow(false)
     val lastGenerationIncomplete: StateFlow<Boolean> = _lastGenerationIncomplete
 
-    /** ⭐ 加载历史对话失败时的提示（null = 正常） */
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError
 
@@ -81,10 +84,11 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
     private val _pendingQuestion = MutableStateFlow<PendingQuestion?>(null)
     val pendingQuestion: StateFlow<PendingQuestion?> = _pendingQuestion
 
-        private var pendingAnswer: CompletableDeferred<String>? = null
+    private var pendingAnswer: CompletableDeferred<String>? = null
     private var agentJob: Job? = null
 
-    /** ⭐ 已被 AI 自动总结过标题的对话 id（避免同一对话每轮都重复总结；首轮结束时并发总结一次） */
+    private val subAgentTokensAccum = AtomicInteger(0)
+
     private val titleSummarized = java.util.Collections.synchronizedSet(
         java.util.HashSet<String>()
     )
@@ -93,45 +97,51 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
     val providerManager get() = app.providerManager
     val projects get() = app.projectStore.projects
 
-                        init {
+    init {
         app.toolRegistry.askUserHandler = { question, options -> askUser(question, options) }
-        // ⭐ 终端会话按对话绑定：AI 的 terminal_exec / terminal_read 使用当前对话的常驻会话
         app.toolRegistry.convIdProvider = { current.value?.id.orEmpty() }
-        // ⭐ 第五轮 #4：项目记忆按对话绑定——AI 的 project_memory 作用于当前对话所属项目
         app.toolRegistry.projectIdProvider = { current.value?.projectId.orEmpty() }
+        app.toolRegistry.convPermissionLevelProvider = { current.value?.permissionLevel ?: 2 }
+        app.toolRegistry.onSubAgentToken = { p, c, _ ->
+            subAgentTokensAccum.addAndGet(p + c)
+        }
+        app.toolRegistry.onSubAgentTaskCompleted = { task ->
+            viewModelScope.launch { handleSubAgentCompletion(task) }
+        }
         app.agentStopCallback = { stop() }
-        // ⭐ v1.2.0 #7.2：注册到跨界面消息桥，让悬浮窗（FloatingService）能直接发消息 / 暂停
         AgentBridge.setViewModel(this)
         val bootstrap = Conversation(id = UUID.randomUUID().toString(), title = "新会话")
         _conversations.value = listOf(bootstrap)
         _current.value = bootstrap
+        _sessionStats.value = bootstrap.lastSessionStats
 
-                viewModelScope.launch {
+        viewModelScope.launch {
             runCatching { app.projectStore.init(); refreshMemoryList() }
-            // ⭐ #7 长对话秒开：先只读元信息（meta，不读 payload）→ 列表立即可用、进入软件不卡；
-            //    再切到 IO 后台逐个分块填充 payload（消息正文），填完后再 #10 合并空对话。
             try {
                 val metas = withContext(Dispatchers.IO) { app.database.conversationDao().allMeta() }
-                                if (metas.isNotEmpty()) {
+                if (metas.isNotEmpty()) {
                     _conversations.value = metas.map {
                         Conversation(id = it.id, title = it.title,
                             createdAt = it.createdAt, updatedAt = it.updatedAt, projectId = it.projectId)
                     }
                     _current.value = _conversations.value.firstOrNull()
+                    _sessionStats.value = _current.value?.lastSessionStats ?: SessionStats()
                     bump()
                 }
                 if (metas.isNotEmpty()) {
-                    // 后台逐个填 payload（IO，不阻塞 UI）；当前对话填充时同步刷新 _current
                     viewModelScope.launch(Dispatchers.IO) {
                         var filled = 0
                         for (meta in metas) {
                             val full = runCatching { loadOneConversation(meta.id) }.getOrNull() ?: continue
                             filled++
                             _conversations.value = _conversations.value.map { if (it.id == full.id) full else it }
-                            if (_current.value?.id == full.id) _current.value = full
+                            if (_current.value?.id == full.id) {
+                                _current.value = full
+                                _sessionStats.value = full.lastSessionStats
+                            }
                         }
                         Log.d(TAG, "filled $filled/${metas.size} conversation payloads in background")
-                        mergeEmptyConversations()   // ⭐ #10：填充后合并无内容的空对话
+                        mergeEmptyConversations()
                         bump()
                     }
                 }
@@ -142,14 +152,35 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         }
     }
 
-    /**
-     * ⭐ #10 新对话自动清除：把「没有消息」的空对话合并保留一个（标题为「新会话」），
-     * 其余空对话从列表删除 + 清 DB。避免大量空对话堆积。
-     */
+    private fun handleSubAgentCompletion(task: SubAgentTaskStore.Task) {
+        val conv = _conversations.value.firstOrNull { it.id == task.convId } ?: return
+        val statusText = when (task.status) {
+            SubAgentTaskStore.Status.DONE -> "✅ 后台子代理已完成"
+            SubAgentTaskStore.Status.ERROR -> "❌ 后台子代理失败"
+            else -> "🔄 后台子代理状态更新"
+        }
+        val body = if (task.status == SubAgentTaskStore.Status.DONE) {
+            task.finalText.take(800).ifBlank { "（无输出）" }
+        } else {
+            task.error.take(400).ifBlank { "（无错误信息）" }
+        }
+        val text = buildString {
+            append("【后台子代理通知】\n")
+            append(statusText).append(" · ").append(task.taskId).append('\n')
+            append("任务：").append(task.description).append("\n\n")
+            append(body)
+        }
+        val msg = ChatMessage(role = ChatMessage.Role.ASSISTANT, content = text)
+        conv.addMessage(msg)
+        _conversations.value = _conversations.value.map { if (it.id == conv.id) conv else it }
+        if (_current.value?.id == conv.id) _current.value = conv
+        persist(conv)
+        bump()
+    }
+
     fun mergeEmptyConversations() {
         val empties = _conversations.value.filter { it.messages.isEmpty() }
         if (empties.size <= 1) return
-        // 保留第一个（或保留当前如果是空的），其余删除
         val keep = if (_current.value in empties) _current.value!! else empties.first()
         val toRemove = empties.filter { it.id != keep.id }
         _conversations.value = _conversations.value.filterNot { it.id in toRemove.map { r -> r.id } }
@@ -160,39 +191,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
 
     // ==================== 持久化 ====================
 
-    /**
-     * ⭐ 加载全部对话。
-     *
-     * 关键：先只读元信息（不含 payload），再按 id 分块读 payload。
-     * 直接 `SELECT *` 时，任何一条 payload 超过 CursorWindow 上限（约 2MB）
-     * 都会让整个查询抛异常，导致全部对话都加载不出来。
-     */
-    private suspend fun loadConversations(): List<Conversation> {
-        val metas = app.database.conversationDao().allMeta()
-        val result = ArrayList<Conversation>(metas.size)
-        var failed = 0
-        var lastErr: String? = null
-        for (meta in metas) {
-            val r = runCatching { loadOneConversation(meta.id) }
-            val conv = r.getOrNull()
-            if (conv != null) {
-                result.add(conv)
-            } else {
-                failed++
-                lastErr = r.exceptionOrNull()?.message
-                Log.e(TAG, "对话 ${meta.id} 加载失败: $lastErr")
-            }
-        }
-        if (failed > 0) {
-            _loadError.value = "有 $failed/${metas.size} 个对话加载失败（最后一条：$lastErr）"
-        }
-        return result
-    }
-
-    /**
-     * ⭐ 按 id 读取单条对话。
-     * payload 较小时一次性读取；超过阈值时用 substr 分块拼接，避开 CursorWindow 限制。
-     */
     private suspend fun loadOneConversation(id: String): Conversation? {
         val dao = app.database.conversationDao()
         val len = dao.payloadLength(id) ?: return null
@@ -215,8 +213,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
     private fun persist(conv: Conversation) {
         app.appScope.launch {
             runCatching {
-                // ⭐ 限制 payload 大小：超过上限则从旧到新剥离 images，
-                //    避免存出无法读取的超大对话
                 val safe = shrinkForStorage(conv)
                 app.database.conversationDao().upsert(
                     ConversationEntity(
@@ -230,13 +226,7 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         }
     }
 
-    /**
-     * ⭐ 控制单条对话 payload 的大小。
-     * 先剥离单条消息里过大的 images；若整体仍超上限，则从旧到新继续剥离，
-     * 直到序列化后不超过 maxPayloadChars。
-     */
     private fun shrinkForStorage(conv: Conversation): Conversation {
-        // 单条消息 images 过大 → 直接清空
         var msgs = conv.messages.map { m ->
             if (m.images.sumOf { it.length } > 500_000) m.copy(images = emptyList()) else m
         }.toMutableList()
@@ -244,7 +234,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         var encoded = json.encodeToString(Conversation.serializer(), conv.copy(messages = msgs))
         if (encoded.length <= maxPayloadChars) return conv.copy(messages = msgs)
 
-        // 仍超限：从旧到新剥离 images
         for (i in msgs.indices) {
             if (msgs[i].images.isEmpty()) continue
             msgs[i] = msgs[i].copy(images = emptyList())
@@ -256,22 +245,30 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
 
     // ==================== 会话管理 ====================
 
-        fun newConversation() {
+    fun newConversation() {
         val c = Conversation(id = UUID.randomUUID().toString(), title = "新会话")
         _conversations.value = _conversations.value + c
         _current.value = c
         _quotedMessage.value = null
         _lastGenerationIncomplete.value = false
-        clearDrafts()   // ⭐ 切换对话：清除临时编辑草稿
+        _sessionStats.value = SessionStats()
+        subAgentTokensAccum.set(0)
+        clearDrafts()
         persist(c); bump()
     }
 
     fun switchConversation(id: String) {
         val c = _conversations.value.firstOrNull { it.id == id } ?: return
+        _current.value?.id?.let {
+            ApprovalManager.clearSession(it)
+            UserApprovalTokens.clear(it)
+        }
         _current.value = c
         _quotedMessage.value = null
         _lastGenerationIncomplete.value = false
-        clearDrafts()   // ⭐ 切换对话：清除临时编辑草稿
+        _sessionStats.value = c.lastSessionStats
+        subAgentTokensAccum.set(0)
+        clearDrafts()
         bump()
     }
 
@@ -282,25 +279,57 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
                 val c = Conversation(id = UUID.randomUUID().toString(), title = "新会话")
                 _conversations.value = listOf(c); persist(c); c
             }
+            _sessionStats.value = _current.value?.lastSessionStats ?: SessionStats()
+            subAgentTokensAccum.set(0)
         }
         app.appScope.launch { runCatching { app.database.conversationDao().delete(id) } }
         bump()
     }
 
+    // ⭐ 修复：rename 用 copy 生成新对象，StateFlow 才会发射
     fun renameConversation(id: String, newTitle: String) {
-        val conv = _conversations.value.firstOrNull { it.id == id } ?: return
-        conv.title = newTitle; conv.updatedAt = System.currentTimeMillis()
-        _conversations.value = _conversations.value.map { if (it.id == id) conv else it }
-        if (_current.value?.id == id) _current.value = conv
-        persist(conv); bump()
+        val now = System.currentTimeMillis()
+        val old = _conversations.value
+        val updated = old.map {
+            if (it.id == id) it.copy(title = newTitle, updatedAt = now) else it
+        }
+        _conversations.value = updated
+        updated.firstOrNull { it.id == id }?.let { conv ->
+            if (_current.value?.id == id) _current.value = conv
+            persist(conv)
+        }
+        bump()
     }
 
+    // ⭐ 修复：togglePin 用 copy 生成新对象，StateFlow 才会发射
     fun togglePin(id: String) {
-        val conv = _conversations.value.firstOrNull { it.id == id } ?: return
-        conv.pinned = !conv.pinned
-        _conversations.value = _conversations.value.map { if (it.id == id) conv else it }
-        if (_current.value?.id == id) _current.value = conv
-        persist(conv); bump()
+        val old = _conversations.value
+        val updated = old.map {
+            if (it.id == id) it.copy(pinned = !it.pinned) else it
+        }
+        _conversations.value = updated
+        updated.firstOrNull { it.id == id }?.let { conv ->
+            if (_current.value?.id == id) _current.value = conv
+            persist(conv)
+        }
+        bump()
+    }
+
+    // ⭐ 修复：setPermissionLevel 用 copy
+    fun setPermissionLevel(level: Int) {
+        val cur = _current.value ?: return
+        val v = level.coerceIn(0, 3)
+        if (cur.permissionLevel == v) return
+        val old = _conversations.value
+        val updated = old.map {
+            if (it.id == cur.id) it.copy(permissionLevel = v) else it
+        }
+        _conversations.value = updated
+        updated.firstOrNull { it.id == cur.id }?.let { conv ->
+            _current.value = conv
+            persist(conv)
+        }
+        bump()
     }
 
     // ==================== 项目 ====================
@@ -320,39 +349,47 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
     fun deleteProject(id: String) {
         viewModelScope.launch { runCatching {
             app.projectStore.delete(id)
-            _conversations.value.forEach { c ->
-                if (c.projectId == id) { c.projectId = ""; persist(c) }
+            val old = _conversations.value
+            val updated = old.map {
+                if (it.projectId == id) it.copy(projectId = "") else it
             }
-            _conversations.value = _conversations.value.map { c ->
-                if (c.projectId == id) c.copy().also { it.projectId = "" } else c
+            _conversations.value = updated
+            // 持久化有变化的
+            old.zip(updated).forEach { (o, n) ->
+                if (o != n) persist(n)
+            }
+            if (_current.value?.projectId == id) {
+                _current.value = updated.firstOrNull { it.id == _current.value?.id }
             }
             bump()
         } }
     }
 
+    // ⭐ 修复：moveConversationToProject 用 copy
     fun moveConversationToProject(convId: String, projectId: String) {
-        val conv = _conversations.value.firstOrNull { it.id == convId } ?: return
-        conv.projectId = projectId
-        _conversations.value = _conversations.value.map { if (it.id == convId) conv else it }
-        if (_current.value?.id == convId) _current.value = conv
-        persist(conv); bump()
+        val old = _conversations.value
+        val updated = old.map {
+            if (it.id == convId) it.copy(projectId = projectId) else it
+        }
+        _conversations.value = updated
+        updated.firstOrNull { it.id == convId }?.let { conv ->
+            if (_current.value?.id == convId) _current.value = conv
+            persist(conv)
+        }
+        bump()
     }
 
     // ==================== 对话导出 / 导入 ====================
 
-    /** 把某个对话序列化为 JSON 文本（裸 Conversation，导入时直接解析）。 */
     fun exportConversationJson(convId: String): String? {
         val conv = _conversations.value.firstOrNull { it.id == convId } ?: return null
         return json.encodeToString(Conversation.serializer(), conv)
     }
 
-    /** 解析导入文本为 Conversation（兼容裸 Conversation JSON 与 {data:{...}} 包裹格式）。 */
     fun parseConversationFromImport(text: String): Conversation? {
         val trimmed = text.trim()
-        // 1) 直接按 Conversation 解析（导出即此格式）
         runCatching { json.decodeFromString(Conversation.serializer(), trimmed) }
             .onSuccess { return it }
-        // 2) 兼容带 data 包裹的格式
         return runCatching {
             val root = json.parseToJsonElement(trimmed)
             val element = if (root is kotlinx.serialization.json.JsonObject &&
@@ -361,10 +398,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         }.getOrNull()
     }
 
-    /**
-     * 导入对话：重新生成 id（避免与现有冲突），并入会话列表并持久化。
-     * @return 导入后的新对话
-     */
     fun importConversationJson(text: String): Conversation? {
         val conv = parseConversationFromImport(text) ?: return null
         val newId = UUID.randomUUID().toString()
@@ -379,6 +412,7 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         _current.value = imported
         _quotedMessage.value = null
         _lastGenerationIncomplete.value = false
+        _sessionStats.value = imported.lastSessionStats
         viewModelScope.launch {
             runCatching {
                 app.database.conversationDao().upsert(
@@ -395,7 +429,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         return imported
     }
 
-        /** 生成建议文件名，例如：对话-<标题>-20261002-1234.json */
     fun suggestedExportFileName(conv: Conversation): String {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
         val safe = conv.title.replace(Regex("[\\/:*?\"<>\\\\]"), "_").trim().ifBlank { "对话" }
@@ -404,30 +437,23 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
 
     // ==================== Token 统计 ====================
 
-    /** 当前对话的 Token 累计（所有非 null 的 TokenStats 求和） */
     fun tokenTotalsForCurrent(): TokenTotals {
         val c = _current.value ?: return TokenTotals()
         return c.totalTokens()
     }
 
-    /** 某对话的 Token 累计 */
     fun tokenTotalsFor(convId: String): TokenTotals {
         val c = _conversations.value.firstOrNull { it.id == convId } ?: return TokenTotals()
         return c.totalTokens()
     }
 
-    /** 生成 Token 导出 JSON（当前对话） */
     fun exportTokenJson(convId: String): String? {
         val conv = _conversations.value.firstOrNull { it.id == convId } ?: return null
         val totals = conv.totalTokens()
         val entries = conv.messagesWithStats().map { m ->
-            TokenEntry(
-                messageId = m.id,
-                role = m.role.name,
-                stats = m.tokenStats!!,
-            )
+            TokenEntry(messageId = m.id, role = m.role.name, stats = m.tokenStats!!)
         }
-                val report = TokenExportReport(
+        val report = TokenExportReport(
             conversationId = conv.id,
             title = conv.title,
             totals = totals,
@@ -437,10 +463,8 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         return json.encodeToString(TokenExportReport.serializer(), report)
     }
 
-            /** 清除某对话所有消息的 tokenStats（不影响对话内容） */
     fun clearTokenStats(convId: String) {
         val conv = _conversations.value.firstOrNull { it.id == convId } ?: return
-        // 就地改（Conversation.messages 是 val，不能重新赋值）
         for (i in conv.messages.indices) {
             val m = conv.messages[i]
             if (m.tokenStats != null) conv.messages[i] = m.copy(tokenStats = null)
@@ -452,15 +476,12 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         runCatching { FloatingService.setTokenText(app, "") }
     }
 
-        // ==================== 记忆 ====================
+    // ==================== 记忆 ====================
 
     fun refreshMemoryList() { _memoryList.value = app.memory.list().toList() }
     fun saveMemory(key: String, content: String) { app.memory.save(key, content); refreshMemoryList() }
     fun deleteMemory(key: String) { app.memory.delete(key); refreshMemoryList() }
 
-    // ==================== ⭐ 第五轮 #4：项目记忆（每项目独立）====================
-
-    /** 刷新某项目的记忆列表（设置页切换项目时调） */
     fun refreshProjectMemory(projectId: String) {
         _projectMemoryList.value = if (projectId.isBlank()) emptyList()
         else app.memory.projectMemoryList(projectId).toList()
@@ -478,51 +499,39 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         refreshProjectMemory(projectId)
     }
 
-        // ==================== 引用 ====================
+    // ==================== 引用 ====================
 
     fun quoteMessage(msg: ChatMessage) { _quotedMessage.value = msg }
     fun clearQuote() { _quotedMessage.value = null }
 
-    // ==================== ⭐ 消息编辑 / 删除（用户长按菜单） ====================
+    // ==================== 消息编辑 / 删除 ====================
 
-    /** ⭐ 临时编辑草稿（内存，切换对话 / 退出 App 即清除，不落盘）。
-     *  keyed by messageId。满足"修改内容保存直到退出软件或切换对话窗口"。 */
     private val draftEdits = mutableMapOf<String, String>()
 
-    /** 取某消息的编辑草稿（无则返回 null，UI 回退显示原文） */
     fun draftEdit(msgId: String): String? = draftEdits[msgId]
 
-        /** 保存用户消息的编辑内容（仅改展示，不重新生成、不落盘） */
     fun editUserMessage(msgId: String, newContent: String) {
         draftEdits[msgId] = newContent
         bump()
     }
 
-    /**
-     * ⭐ v1.1.0：修改用户消息并**重新发送（重新生成 AI 回复）**。
-     * 保留该 USER 消息及其之前的全部上下文，丢弃其后所有 AI / 工具消息，
-     * 把编辑后的内容作为这条 USER 消息的新正文，然后触发 Agent 重新跑一轮。
-     */
     fun resendUserMessage(msgId: String, newContent: String) {
         val conv = _current.value ?: return
         if (agentJob?.isActive == true) return
         val idx = conv.messages.indexOfFirst { it.id == msgId }
         if (idx < 0) return
-        // 丢弃该 USER 消息之后的所有消息（旧 AI 回复 / 工具结果），保留之前上下文
         val kept = conv.messages.subList(0, idx + 1).toMutableList()
         val edited = kept[idx].copy(content = newContent, isStreaming = false)
         kept[idx] = edited
         conv.messages.clear()
         conv.messages.addAll(kept)
         draftEdits.remove(msgId)
-        // 若 Agent 正在跑先停掉，再基于新上下文重跑
         agentJob?.cancel()
         persist(conv); bump()
         _lastGenerationIncomplete.value = false
         agentJob = viewModelScope.launch { runCatching { runAgent(conv) } }
     }
 
-    /** 删除单条消息（AI / 用户皆可） */
     fun deleteMessage(msgId: String) {
         val conv = _current.value ?: return
         conv.messages.removeAll { it.id == msgId }
@@ -530,7 +539,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         persist(conv); bump()
     }
 
-    /** ⭐ 多选删除：批量删除选中消息（AI / 用户皆可） */
     fun deleteMessages(ids: Set<String>) {
         if (ids.isEmpty()) return
         val conv = _current.value ?: return
@@ -539,7 +547,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         persist(conv); bump()
     }
 
-    /** 切换对话 / 新建对话时清除临时编辑草稿（满足"切换对话窗口即清除"） */
     private fun clearDrafts() { draftEdits.clear() }
 
     // ==================== 重试 / 继续 ====================
@@ -654,9 +661,7 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
                 _attachedFiles.value = emptyList()
                 _attachedImages.value = emptyList()
                 _quotedMessage.value = null
-                persist(conv); bump()
 
-                // 发给 AI 时用完整内容
                 val idx = conv.messages.indexOfFirst { it.id == msg.id }
                 if (idx >= 0) conv.messages[idx] = msg.copy(content = fullText)
                 persist(conv); bump()
@@ -672,14 +677,25 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
 
     // ==================== Agent ====================
 
-        private suspend fun runAgent(conv: Conversation) {
+    private suspend fun runAgent(conv: Conversation) {
         if (app.settings.floatingEnabled()) {
             runCatching {
                 FloatingService.showWork(app, AgentState(status = AgentState.Status.THINKING, progressText = "思考中…"))
             }
         }
-        // ⭐ 新一次 Agent 任务 → 复位 AI 操控"会话内已确认"标记（若设置开启逐次确认，则本次任务内只问一次）
         runCatching { app.toolRegistry.aiControlGuard.beginSession() }
+
+        var localStats = conv.lastSessionStats.copy(tokensPerSec = 0.0)
+        _sessionStats.value = localStats
+
+        val sessionStartMs = System.currentTimeMillis()
+        var sessionCompletion = 0
+
+        fun pushStats() {
+            if (_current.value?.id == conv.id) {
+                _sessionStats.value = localStats
+            }
+        }
 
         var placeholderId: String? = null
         fun ensurePlaceholder(): String {
@@ -695,13 +711,64 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
 
         val content = StringBuilder()
         val reasoning = StringBuilder()
-        // 正常结束时置 false；中断/报错时置 true
         var incomplete = false
 
         try {
             app.agentCore.run(conv).collect { ev ->
                 when (ev) {
-                                        is AgentEvent.ReasoningDelta -> {
+                    is AgentEvent.RoundStart -> {
+                        localStats = localStats.copy(round = localStats.round + 1)
+                        pushStats()
+                    }
+                    is AgentEvent.Stats -> {
+                        val subAgentExtra = subAgentTokensAccum.getAndSet(0)
+                        sessionCompletion += ev.stats.completionTokens
+                        localStats = localStats.copy(
+                            totalTokens = localStats.totalTokens +
+                                ev.stats.promptTokens + ev.stats.completionTokens + subAgentExtra,
+                        )
+                        val elapsedSec = ((System.currentTimeMillis() - sessionStartMs) / 1000.0)
+                            .coerceAtLeast(0.1)
+                        val tps = sessionCompletion / elapsedSec
+                        val convTotals = conv.totalTokens()
+                        val rate = if (convTotals.promptTokens > 0)
+                            convTotals.cacheHitTokens * 100.0 / convTotals.promptTokens else 0.0
+                        localStats = localStats.copy(tokensPerSec = tps, cacheHitRate = rate)
+                        pushStats()
+
+                        val lastId = conv.messages.lastOrNull { it.role == ChatMessage.Role.ASSISTANT }?.id ?: ""
+                        updateMessage(conv, lastId) { it.copy(tokenStats = ev.stats) }
+                        bump()
+                        val totalConv = conv.totalTokens()
+                        runCatching {
+                            FloatingService.setTokenText(
+                                app,
+                                "Token: 输入 ${totalConv.promptTokens} / 输出 ${totalConv.completionTokens} / " +
+                                    "缓存 ${totalConv.cacheHitTokens} / 共 ${totalConv.totalTokens}",
+                            )
+                        }
+                        runCatching {
+                            app.jsPluginRuntime.pushEventAll(
+                                "{\"type\":\"OnTokenUpdate\",\"payload\":{\"prompt\":${totalConv.promptTokens}," +
+                                    "\"completion\":${totalConv.completionTokens}," +
+                                    "\"cache\":${totalConv.cacheHitTokens}," +
+                                    "\"total\":${totalConv.totalTokens}}}"
+                            )
+                        }
+                    }
+                    is AgentEvent.ToolStart -> {
+                        localStats = localStats.copy(steps = localStats.steps + 1)
+                        pushStats()
+                        persist(conv); bump()
+                        runCatching {
+                            val argsJson = kotlinx.serialization.json.JsonPrimitive(ev.call.arguments.take(200)).toString()
+                            val toolJson = kotlinx.serialization.json.JsonPrimitive(ev.call.name).toString()
+                            app.jsPluginRuntime.pushEventAll(
+                                "{\"type\":\"OnToolCall\",\"payload\":{\"tool\":$toolJson,\"args\":$argsJson}}"
+                            )
+                        }
+                    }
+                    is AgentEvent.ReasoningDelta -> {
                         reasoning.append(ev.text)
                         updateMessage(conv, ensurePlaceholder()) { it.copy(reasoning = reasoning.toString()) }
                         if (app.settings.floatingEnabled()) {
@@ -717,16 +784,10 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
                         }
                         bump()
                     }
-                                        is AgentEvent.MessageDone -> {
+                    is AgentEvent.MessageDone -> {
                         dropPlaceholder()
                         content.clear(); reasoning.clear()
                         persist(conv)
-                        // ⭐ 首轮对话结束后并发触发一次标题总结（不阻塞主流程）：
-                        //   - 仅当该对话 USER 消息恰好 1 条（即第一轮）
-                        //   - 尚未被自动总结过（去重）
-                        //   - 设置开关 autoTitleSummary 开启
-                        // 旧实现用 title 长度判定，因 send() 已把 title 设为用户首条前 16 字，
-                        // 导致"有时触发有时不触发"。现改为按"首轮结束"稳定判定。
                         if (app.settings.autoTitleSummary() &&
                             !titleSummarized.contains(conv.id) &&
                             conv.messages.count { it.role == ChatMessage.Role.USER } == 1
@@ -735,7 +796,6 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
                             val aiText = ev.message.content
                             if (firstUser.isNotBlank()) {
                                 titleSummarized.add(conv.id)
-                                // 并发（多线程）总结：独立协程，不阻塞 Agent 主循环
                                 viewModelScope.launch {
                                     runCatching {
                                         val newTitle = app.agentCore.summarizeTitle(firstUser, aiText)
@@ -752,52 +812,53 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
                         }
                         bump()
                     }
-                                        is AgentEvent.ToolEnd, is AgentEvent.ToolMessage -> {
+                    is AgentEvent.ToolEnd -> {
+                        if (ev.result.name == "generate_speech" && ev.result.success) {
+                            val path = extractSpeechPath(ev.result.output)
+                            val duration = extractSpeechDuration(ev.result.output)
+                            if (path.isNotBlank()) {
+                                conv.messages.add(ChatMessage(
+                                    role = ChatMessage.Role.ASSISTANT,
+                                    audioPath = path,
+                                    audioDurationMs = duration,
+                                ))
+                            }
+                        }
+                        if (ev.result.name == "generate_image" && ev.result.success) {
+                            val path = extractImagePath(ev.result.output)
+                            if (path.isNotBlank()) {
+                                conv.messages.add(ChatMessage(
+                                    role = ChatMessage.Role.ASSISTANT,
+                                    imagePath = path,
+                                ))
+                            }
+                        }
+                        if (ev.result.name == "generate_video" && ev.result.success) {
+                            val path = extractVideoPath(ev.result.output)
+                            val durationSec = extractVideoDuration(ev.result.output)
+                            if (path.isNotBlank()) {
+                                conv.messages.add(ChatMessage(
+                                    role = ChatMessage.Role.ASSISTANT,
+                                    videoPath = path,
+                                    videoDurationMs = durationSec * 1000,
+                                ))
+                            }
+                        }
                         persist(conv); bump()
                     }
-                                                            is AgentEvent.Stats -> {
-                        val lastId = conv.messages.lastOrNull { it.role == ChatMessage.Role.ASSISTANT }?.id ?: ""
-                        updateMessage(conv, lastId) { it.copy(tokenStats = ev.stats) }
-                        bump()
-                        // ⭐ 悬浮窗面板显示当前对话累计 Token
-                        val total = conv.totalTokens()
-                        runCatching {
-                            FloatingService.setTokenText(
-                                app,
-                                "Token: 输入 ${total.promptTokens} / 输出 ${total.completionTokens} / 缓存 ${total.cacheHitTokens} / 共 ${total.totalTokens}",
-                            )
-                        }
-                        // ⭐ v1.2.0 #7.1：向 JS 插件广播 OnTokenUpdate 事件
-                        runCatching {
-                            app.jsPluginRuntime.pushEventAll(
-                                "{\"type\":\"OnTokenUpdate\",\"payload\":{\"prompt\":${total.promptTokens}," +
-                                "\"completion\":${total.completionTokens},\"cache\":${total.cacheHitTokens}," +
-                                "\"total\":${total.totalTokens}}}"
-                            )
-                        }
+                    is AgentEvent.ToolMessage -> {
+                        persist(conv); bump()
                     }
                     is AgentEvent.State -> {
                         _agentState.value = ev.state
                         if (app.settings.floatingEnabled()) {
                             runCatching { FloatingService.update(ev.state) }
                         }
-                        // ⭐ v1.2.0 #7.1：向 JS 插件广播 OnAgentState 事件
                         runCatching {
                             app.jsPluginRuntime.pushEventAll(
                                 "{\"type\":\"OnAgentState\",\"payload\":{\"state\":\"${ev.state.status.name}\"," +
-                                "\"tool\":\"${ev.state.currentTool}\",\"progress\":\"${ev.state.progressText}\"}}"
-                            )
-                        }
-                    }
-                                        is AgentEvent.ToolStart -> {
-                        persist(conv); bump()
-                        // ⭐ v1.2.0 #7.1：向 JS 插件广播 OnToolCall 事件
-                        //    JsonPrimitive().toString() 输出带引号且已转义的 JSON 字符串，可直接拼进 payload
-                        runCatching {
-                            val argsJson = kotlinx.serialization.json.JsonPrimitive(ev.call.arguments.take(200)).toString()
-                            val toolJson = kotlinx.serialization.json.JsonPrimitive(ev.call.name).toString()
-                            app.jsPluginRuntime.pushEventAll(
-                                "{\"type\":\"OnToolCall\",\"payload\":{\"tool\":$toolJson,\"args\":$argsJson}}"
+                                    "\"tool\":\"${ev.state.currentTool}\"," +
+                                    "\"progress\":\"${ev.state.progressText}\"}}"
                             )
                         }
                     }
@@ -813,31 +874,75 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         } catch (e: Throwable) {
             Log.e(TAG, "runAgent failed", e)
             incomplete = true
-                        } finally {
-            dropPlaceholder(); persist(conv); bump()
+        } finally {
+            dropPlaceholder()
+            val tail = subAgentTokensAccum.getAndSet(0)
+            if (tail > 0) {
+                localStats = localStats.copy(totalTokens = localStats.totalTokens + tail)
+            }
+            conv.lastSessionStats = localStats.copy(tokensPerSec = 0.0)
+            persist(conv); bump()
             _agentState.value = AgentState()
             _lastGenerationIncomplete.value = incomplete
             if (app.settings.floatingEnabled()) {
                 runCatching { FloatingService.finishWork(app, AgentState(status = AgentState.Status.COMPLETED)) }
             }
-            // ⭐ Agent 结束 → 无条件关闭 AI 操控镜像（无论悬浮球是否开启）
             runCatching { app.toolRegistry.stopAiMirror() }
         }
     }
 
+    private fun extractSpeechPath(output: String): String {
+        val m = Regex("路径：\\s*(\\S+\\.wav)").find(output)
+        return m?.groupValues?.get(1) ?: ""
+    }
+
+    private fun extractSpeechDuration(output: String): Int {
+        val m = Regex("时长：\\s*(\\d+)ms").find(output)
+        return m?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    }
+
+    private fun extractImagePath(output: String): String {
+        val m = Regex("路径：\\s*(\\S+\\.(png|jpg|jpeg|webp))").find(output)
+        return m?.groupValues?.get(1) ?: ""
+    }
+
+    private fun extractVideoPath(output: String): String {
+        val m = Regex("路径：\\s*(\\S+\\.(mp4|mov|avi|webm))").find(output)
+        return m?.groupValues?.get(1) ?: ""
+    }
+
+    private fun extractVideoDuration(output: String): Int {
+        val m = Regex("时长：\\s*(\\d+)s").find(output)
+        return m?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    }
+
     fun stop() {
         agentJob?.cancel(); agentJob = null
+        pendingAnswer?.let {
+            if (!it.isCompleted) it.complete("（用户中断）")
+        }
+        pendingAnswer = null
+        _pendingQuestion.value = null
+        _current.value?.id?.let {
+            ApprovalManager.clearSession(it)
+            UserApprovalTokens.clear(it)
+        }
+        ResultCache.clear()
+        subAgentTokensAccum.set(0)
         _agentState.value = AgentState()
-        // ⭐ 用户主动停止 = 未完整结束 → 允许"继续生成"
         _lastGenerationIncomplete.value = true
-        // ⭐ 停止 AI 操控镜像
         runCatching { app.toolRegistry.stopAiMirror() }
         if (app.settings.floatingEnabled()) {
             runCatching { FloatingService.finishWork(app, AgentState(status = AgentState.Status.COMPLETED)) }
         }
     }
 
-    override fun onCleared() { agentJob?.cancel(); super.onCleared() }
+    override fun onCleared() {
+        agentJob?.cancel()
+        pendingAnswer?.let { if (!it.isCompleted) it.complete("（ViewModel 销毁）") }
+        pendingAnswer = null
+        super.onCleared()
+    }
 
     private suspend fun askUser(question: String, options: String): String {
         val deferred = CompletableDeferred<String>()
@@ -850,6 +955,7 @@ class MainViewModel(private val app: MainApp) : ViewModel() {
         if (app.settings.floatingEnabled()) runCatching { FloatingService.update(_agentState.value) }
         val answer = deferred.await()
         _pendingQuestion.value = null
+        pendingAnswer = null
         _agentState.value = _agentState.value.copy(status = AgentState.Status.THINKING, progressText = "继续执行…")
         return if (answer.isBlank()) "（用户未回答）" else answer
     }

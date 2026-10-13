@@ -1,77 +1,101 @@
 package com.ai.android.plugin
 
 /**
- * ⭐ 悬浮窗外观样式（可被 THEME 类插件覆盖）。
- *
- * 默认值遵循 AndLua MyApp1 示例（xfc.aly）的白卡风格：
- * - 白色圆角卡片、深色正文、灰色次要文字、蓝色 Token 强调色。
- *
- * 插件 manifest.capabilities 含 "THEME" 时，可经 [ThemeStyleProvider] 提供自定义样式，
- * 覆盖悬浮窗球 / 面板的颜色、字号、圆角等。
- *
- * ⭐ v1.1.0 #3 扩展：
- * - 悬浮球形状 / 尺寸 / 图标（ballShape / ballSize / ballIcon）
- * - 面板布局（panelLayout）
- * - 聊天气泡样式（chatBubble）
- * - 功能开关（features：插件可声明要启用的能力集，宿主按此裁剪工具 / 功能）
+ * 悬浮窗外观样式（可被 THEME 类插件覆盖）。
+ * 默认值遵循内置的三套主题风格。
  */
 data class FloatingStyle(
-    /** 面板卡片背景（默认 0xFFFFFFFF 白） */
     val panelBg: Int = 0xFFFFFFFF.toInt(),
-    /** 面板主文字（状态 / 标题） */
     val panelText: Int = 0xFF1F2937.toInt(),
-    /** 面板次要文字（提示 / 工具行） */
     val panelTextSecondary: Int = 0xFF6B7280.toInt(),
-    /** 标题栏右侧按钮（— ✕） */
     val panelActionText: Int = 0xFF9CA3AF.toInt(),
-    /** 强调色（Token 数值） */
     val accent: Int = 0xFF2563EB.toInt(),
-    /** 分割线 */
     val divider: Int = 0xFFE5E7EB.toInt(),
-    /** 实时输出文字 */
     val realtimeText: Int = 0xFF374151.toInt(),
-    /** 默认悬浮球背景 */
     val ballBg: Int = 0xFF2563EB.toInt(),
-    /** 默认悬浮球文字 */
     val ballText: Int = 0xFFFFFFFF.toInt(),
-        /** 面板圆角 dp */
     val cornerRadius: Int = 18,
-    /** 面板标题文字（覆盖 "AI 助手"） */
     val panelTitle: String = "AI 助手",
-    /** 悬浮球文字（覆盖 "AI"） */
     val ballLabel: String = "AI",
 
-    // ==================== ⭐ v1.1.0 #3：新增字段（全部带默认值，旧插件零改动可用）====================
-
-    /**
-     * 悬浮球形状。取值："circle"（圆，默认）/ "rounded"（圆角矩形）/
-     * "square"（直角方块）/ "capsule"（胶囊）。
-     */
     val ballShape: String = "circle",
-    /** 悬浮球尺寸 dp（默认 46） */
     val ballSize: Int = 46,
-    /**
-     * 悬浮球图标（插件自带 PNG 相对路径，相对插件目录）。
-     * 非空时优先用图标渲染（而非纯色 tint 圆球）；不存在则回退纯色。
-     */
     val ballIcon: String = "",
-    /**
-     * 面板布局。取值："default"（头部→实时→工具→镜像→按钮，默认）/
-     * "compact"（折叠实时输出区，更紧凑）。
-     */
     val panelLayout: String = "default",
-    /** ⭐ 聊天气泡样式（插件可改聊天界面气泡圆角/配色/字号/留白） */
+
+    /** ⭐ 面板边框宽度 dp（0=无边框）。brutal 风格用 2 */
+    val panelStrokeWidth: Int = 0,
+    /** ⭐ 面板边框颜色（与 panelBg 区分） */
+    val panelStrokeColor: Int = 0xFFE5E7EB.toInt(),
+
     val chatBubble: ChatBubbleStyle = ChatBubbleStyle(),
-    /**
-     * ⭐ 功能开关集：插件声明要启用的能力清单（如 "MEMORY" / "SCHEDULER" / "ACCESSIBILITY" / "FLOATING"）。
-     * 空 = 全部默认启用；非空 = 仅启用清单内 + 宿主按此裁剪工具注册。
-     */
     val features: List<String> = emptyList(),
 ) {
     companion object {
-        /** ⭐ 默认 AndLua 白卡风格（xfc.aly 配色） */
+        /** 默认（无主题时用） */
         val DEFAULT = FloatingStyle()
-        /** 深色风格（兜底 / 插件可选） */
+
+        /** ⭐ 现代极简（Codex 风）：纯白面板 + 近黑球 + 20dp 圆角 + 无描边 */
+        val MINIMAL = FloatingStyle(
+            panelBg = 0xFFFFFFFF.toInt(),
+            panelText = 0xFF1A1A1A.toInt(),
+            panelTextSecondary = 0xFF6B6B6B.toInt(),
+            panelActionText = 0xFFB0B0B0.toInt(),
+            accent = 0xFF1A1A1A.toInt(),
+            divider = 0xFFE8E8E8.toInt(),
+            realtimeText = 0xFF4A4A4A.toInt(),
+            ballBg = 0xFF1A1A1A.toInt(),
+            ballText = 0xFFFFFFFF.toInt(),
+            cornerRadius = 20,
+            panelTitle = "AI 助手",
+            ballLabel = "AI",
+            ballShape = "circle",
+            ballSize = 46,
+            panelStrokeWidth = 1,
+            panelStrokeColor = 0xFFE8E8E8.toInt(),
+        )
+
+        /** ⭐ 原生 Material 3：蓝紫球 + 圆润面板 + 无描边 */
+        val NATIVE = FloatingStyle(
+            panelBg = 0xFFFBFAFE.toInt(),
+            panelText = 0xFF1A1B22.toInt(),
+            panelTextSecondary = 0xFF45464F.toInt(),
+            panelActionText = 0xFF767680.toInt(),
+            accent = 0xFF3B5EDB.toInt(),
+            divider = 0xFFC6C5D0.toInt(),
+            realtimeText = 0xFF45464F.toInt(),
+            ballBg = 0xFF3B5EDB.toInt(),
+            ballText = 0xFFFFFFFF.toInt(),
+            cornerRadius = 20,
+            panelTitle = "AI 助手",
+            ballLabel = "AI",
+            ballShape = "circle",
+            ballSize = 46,
+            panelStrokeWidth = 0,
+            panelStrokeColor = 0xFFC6C5D0.toInt(),
+        )
+
+        /** ⭐ 新粗野主义：橙红球 + 硬边 + 2dp 黑描边 + 小圆角 */
+        val BRUTAL = FloatingStyle(
+            panelBg = 0xFFFFFFFF.toInt(),
+            panelText = 0xFF1F1A17.toInt(),
+            panelTextSecondary = 0xFF4A3B32.toInt(),
+            panelActionText = 0xFF8E7A6E.toInt(),
+            accent = 0xFFFF5722.toInt(),
+            divider = 0xFF1F1A17.toInt(),          // 黑描边
+            realtimeText = 0xFF2A1200.toInt(),
+            ballBg = 0xFFFF5722.toInt(),
+            ballText = 0xFFFFFFFF.toInt(),
+            cornerRadius = 6,                       // 小圆角
+            panelTitle = "AI 助手",
+            ballLabel = "AI",
+            ballShape = "rounded",                  // 圆角矩形球
+            ballSize = 50,
+            panelStrokeWidth = 2,                   // 硬黑边
+            panelStrokeColor = 0xFF1F1A17.toInt(),
+        )
+
+        /** 深色（保留兼容） */
         val DARK = FloatingStyle(
             panelBg = 0xF01F1F1F.toInt(),
             panelText = 0xFFFFFFFF.toInt(),
@@ -85,29 +109,17 @@ data class FloatingStyle(
         )
     }
 
-    /** 判断某功能是否启用（空清单 = 全启用；非空 = 仅清单内） */
     fun isFeatureEnabled(feature: String): Boolean =
         features.isEmpty() || feature in features
 }
 
-/**
- * ⭐ v1.1.0 #3：聊天气泡样式（插件可定制聊天界面气泡外观）。
- * 宿主在 MessageBubble 读取时，用 [PluginRegistry.activeChatBubbleStyle] 覆盖默认。
- */
 data class ChatBubbleStyle(
-    /** 气泡圆角 dp（默认：用户 16 / AI 16，跟随现有 RoundedCornerShape） */
     val cornerRadius: Int = 16,
-    /** 用户气泡主色（ARGB Int；null = 用 Compose 内置 primaryContainer） */
     val userBg: Int? = null,
-    /** AI 气泡主色（null = 用内置 surface） */
     val assistantBg: Int? = null,
-    /** 气泡正文颜色（null = 跟随主题 onPrimaryContainer / onSurface） */
     val textColor: Int? = null,
-    /** 正文字号 sp（0 = 跟随默认 15sp） */
     val fontSize: Int = 0,
-    /** 左右留白 dp（0 = 跟随默认 12dp） */
     val horizontalPadding: Int = 0,
-    /** 上下留白 dp（0 = 跟随默认 9dp） */
     val verticalPadding: Int = 0,
 ) {
     companion object {
@@ -115,18 +127,11 @@ data class ChatBubbleStyle(
     }
 }
 
-/**
- * 插件提供的悬浮窗样式来源。
- *
- * 宿主在 [PluginRegistry.refresh] 时，把含 "THEME" 能力的启用插件登记为 [ThemeStyleProvider]；
- * [PluginRegistry.activeFloatingStyle] 取第一个的 [style]（无则返回 [FloatingStyle.DEFAULT]）。
- */
 interface ThemeStyleProvider {
     val manifest: PluginManifest
     fun style(): FloatingStyle
 }
 
-/** 静态样式提供器：把插件 manifest 里可选的 theme.json 解析成 FloatingStyle。 */
 class StaticThemeStyleProvider(
     override val manifest: PluginManifest,
     private val style: FloatingStyle,

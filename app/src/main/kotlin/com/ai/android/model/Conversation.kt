@@ -11,20 +11,30 @@ data class Conversation(
     var updatedAt: Long = System.currentTimeMillis(),
     val providerName: String = "",
     val model: String = "",
-        /** 置顶 */
+    /** 置顶 */
     var pinned: Boolean = false,
     /** 所属项目文件夹 ID（空 = 未归入项目） */
     var projectId: String = "",
+    /** ⭐ 最近一次 Agent 任务结束时的会话统计（按对话隔离 + 持久化） */
+    var lastSessionStats: SessionStats = SessionStats(),
+    /**
+     * ⭐ 本对话的权限等级（Harness）：
+     *  - 0 = 读写（只读 + 文件/记忆读写 + 多模态生成 + subagent）
+     *  - 1 = 设备（读写 + accessibility_control）
+     *  - 2 = 系统（设备 + shell/js/terminal + 文件删除移动等）【默认】
+     *  - 3 = 完全访问（系统 + 跳过所有审批与护栏）
+     */
+    var permissionLevel: Int = 2,
 ) {
     val lastMessageTime: Long
         get() = messages.lastOrNull()?.timestamp ?: createdAt
 
-        fun addMessage(msg: ChatMessage) {
+    fun addMessage(msg: ChatMessage) {
         messages.add(msg)
         updatedAt = msg.timestamp
     }
 
-        /** 取所有非 null 的 TokenStats 求和（assistant 消息携带） */
+    /** 取所有非 null 的 TokenStats 求和（assistant 消息携带） */
     fun totalTokens(): TokenTotals {
         var p = 0; var c = 0; var cache = 0
         for (m in messages) {

@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
@@ -16,25 +15,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * ⭐ v1.2.0 #6：自定义文件选择器（底部抽屉，替代系统 SAF）。
+ * 自定义文件选择器（底部抽屉）。
  *
- * 规格：
- *  - 顶部：面包屑路径导航（/sdcard/Download > …）+ 关闭按钮。
- *  - 主体：文件列表（图标 + 名称 + 大小/日期），支持**多选**（Checkbox）。
- *  - 底部：「取消 / 确认」操作栏。
- *  - 背景：半透明遮罩（Scrim，由父级 ChatScreen 提供）。
- *
- * 底层用 `File("/sdcard")` 遍历；确认时把选中文件路径回传给 onConfirm。
- * 普通 /sdcard 直接读；Android/data 需 Shizuku（未授权时这些目录会列空）。
+ * ⭐ 颜色修复：使用主题色 surface ——
+ *  - MINIMAL 亮色 = #FFFFFF（纯白）
+ *  - MINIMAL 暗色 = #171717（深色，夜间不刺眼）
+ *  - NATIVE / BRUTAL 各自适配
  */
 @Composable
 fun FilePickDrawer(
@@ -42,14 +33,10 @@ fun FilePickDrawer(
     onConfirm: (List<String>) -> Unit,
 ) {
     var path by remember { mutableStateOf("/sdcard") }
-    val root = remember { File("/sdcard") }
 
-        // 面包屑：从 /sdcard 到当前 path 的各级
-    // #13 修复：旧逻辑把根 "sdcard" 也当成子级追加，导致 /sdcard/sdcard 重复显示两层。
-    // 现以 "/sdcard" 为起点，只追加其**之后**的路径段（split 出来的第一段 "sdcard" 跳过）。
-    val crumbs = remember(path, root) {
+    val crumbs = remember(path) {
         val segments = path.split("/").filter { it.isNotBlank() }
-        val sub = segments.drop(1)   // 去掉开头的 "sdcard" 根段
+        val sub = segments.drop(1)
         val out = mutableListOf("/sdcard")
         sub.forEach { seg -> out.add(out.last() + "/" + seg) }
         out
@@ -75,15 +62,13 @@ fun FilePickDrawer(
         }
     }
 
-    // 弹层（父级已有遮罩；本组件只画面板，高度自撑）
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        tonalElevation = 6.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(Modifier.heightIn(max = 380.dp)) {
-            // 面包屑 + 关闭
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -108,9 +93,8 @@ fun FilePickDrawer(
                     Icon(Icons.Default.Close, "关闭")
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // 文件列表
             LazyColumn(Modifier.weight(1f)) {
                 if (entries.isEmpty()) {
                     item { Text("（空目录）", fontSize = 13.sp, modifier = Modifier.padding(16.dp)) }
@@ -127,11 +111,13 @@ fun FilePickDrawer(
                             Icon(Icons.Default.Folder, null, Modifier.size(22.dp),
                                 tint = MaterialTheme.colorScheme.primary)
                         } else {
-                            Icon(Icons.Default.InsertDriveFile, null, Modifier.size(22.dp))
+                            Icon(Icons.Default.InsertDriveFile, null, Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(f.name, fontSize = 14.sp, maxLines = 1)
+                            Text(f.name, fontSize = 14.sp, maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurface)
                             Text(
                                 if (f.isDirectory) "文件夹" else fmtSize(f.length()),
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -151,8 +137,7 @@ fun FilePickDrawer(
                 }
             }
 
-            HorizontalDivider()
-            // 底部操作栏
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
@@ -170,8 +155,6 @@ fun FilePickDrawer(
         }
     }
 }
-
-private val fmtTime = SimpleDateFormat("MM-dd HH:mm", Locale.CHINA)
 
 private fun fmtSize(bytes: Long): String = when {
     bytes < 0 -> ""

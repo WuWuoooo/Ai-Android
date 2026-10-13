@@ -4,19 +4,25 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.*
@@ -24,55 +30,56 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ai.android.R
 import com.ai.android.model.ChatMessage
 import com.ai.android.model.ToolResult
+import com.ai.android.plugin.ChatBubbleStyle
+import com.ai.android.ui.components.AnimatedPopup
 import com.ai.android.ui.components.AppMenuPanel
 import com.ai.android.ui.components.AppMenuItem
-import com.ai.android.plugin.ChatBubbleStyle
+import com.ai.android.ui.theme.HardShadowWrapper
+import com.ai.android.ui.theme.LocalThemeStyleConfig
+import com.ai.android.ui.theme.themeColorOf
 import com.ai.android.util.MarkdownText
 import java.io.File
 
-/**
- * ⭐ v1.1.0 #3：取当前生效的聊天气泡样式（插件 THEME 可覆盖；无插件返回默认）。
- * 宿主在 [MessageBubble] 渲染时读取，覆盖默认圆角 / 配色 / 字号 / 留白。
- */
 internal fun activeChatBubbleStyle(): ChatBubbleStyle = runCatching {
     com.ai.android.MainApp.instance.pluginRegistry.activeChatBubbleStyle
 }.getOrDefault(ChatBubbleStyle.DEFAULT)
 
-/** 把 Int?（ARGB）转 Compose Color；null 返回 null */
-internal fun pluginColor(v: Int?): androidx.compose.ui.graphics.Color? =
-    if (v != null) androidx.compose.ui.graphics.Color(v.toLong() and 0xFFFFFFFFL) else null
+internal fun pluginColor(v: Int?): Color? =
+    if (v != null) Color(v.toLong() and 0xFFFFFFFFL) else null
 
 @OptIn(ExperimentalFoundationApi::class)
-
 @Composable
 fun MessageBubble(
     message: ChatMessage,
     toolResults: Map<String, ToolResult> = emptyMap(),
     isLastAssistant: Boolean = false,
-    /** ⭐ 只有当前正在显示的最后一条 assistant 且生成未完整结束时才为 true */
     showContinue: Boolean = false,
     onRetry: () -> Unit = {},
     onContinue: () -> Unit = {},
     onCopy: () -> Unit = {},
     onQuote: () -> Unit = {},
     onSpeak: () -> Unit = {},
-    // ⭐ 用户消息长按菜单 + 多选（用户额外需求 2）
-    /** 用户消息编辑草稿（切换对话/退出即清；非空则覆盖显示原文） */
     displayContentOverride: String? = null,
-    /** 是否处于多选模式 */
     selectionMode: Boolean = false,
-    /** 当前消息是否被选中 */
     isSelected: Boolean = false,
-        onToggleSelect: () -> Unit = {},
+    onToggleSelect: () -> Unit = {},
     onEditUser: (String) -> Unit = {},
-    /** ⭐ v1.1.0：修改后重新发送（重新生成 AI 回复） */
     onResendUser: (String) -> Unit = {},
     onDeleteMessage: () -> Unit = {},
     onEnterMultiSelect: () -> Unit = {},
@@ -93,6 +100,8 @@ fun MessageBubble(
     }
 }
 
+// ==================== 用户消息气泡 ====================
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UserBubble(
@@ -102,148 +111,179 @@ private fun UserBubble(
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onEditUser: (String) -> Unit,
-    /** ⭐ v1.1.0：修改后重新发送（重新生成 AI 回复） */
     onResendUser: (String) -> Unit,
     onDeleteMessage: () -> Unit,
     onEnterMultiSelect: () -> Unit,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
+    val theme = LocalThemeStyleConfig.current
+    val bubble = activeChatBubbleStyle()
+
     var showMenu by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
     var selectingText by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf(displayContentOverride ?: extractUserDisplayContent(message.content)) }
 
-        val displayText = displayContentOverride?.takeIf { it.isNotBlank() }
+    val displayText = displayContentOverride?.takeIf { it.isNotBlank() }
         ?: extractUserDisplayContent(message.content)
 
-    // ⭐ v1.1.0 #3：插件可覆盖气泡圆角 / 配色 / 字号 / 留白
-    val bubble = activeChatBubbleStyle()
-    val userBubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(
-        bubble.cornerRadius.dp, bubble.cornerRadius.dp,
-        if (bubble.cornerRadius.dp < 20.dp) 4.dp else bubble.cornerRadius.dp,
-        bubble.cornerRadius.dp,
+    // ⭐ 预取字符串
+    val sMenuEdit = stringResource(R.string.menu_edit)
+    val sMenuDelete = stringResource(R.string.menu_delete)
+    val sMenuMulti = stringResource(R.string.menu_multi)
+    val sMenuCopy = stringResource(R.string.menu_copy)
+    val sMenuSelectText = stringResource(R.string.menu_select_text)
+    val sMenuTitle = stringResource(R.string.edit)
+    val sSelecting = stringResource(R.string.menu_selecting)
+    val sEditTitle = stringResource(R.string.menu_edit_title)
+    val sEditDesc = stringResource(R.string.menu_edit_desc)
+    val sEditSave = stringResource(R.string.menu_edit_save)
+    val sEditResend = stringResource(R.string.menu_edit_resend)
+    val sEditPlaceholder = stringResource(R.string.menu_edit_placeholder)
+    val sDeleteTitle = stringResource(R.string.menu_delete_title)
+    val sDeleteConfirm = stringResource(R.string.menu_delete_confirm)
+    val sDelete = stringResource(R.string.delete)
+    val sCancel = stringResource(R.string.cancel)
+    val sFinishSelect = stringResource(R.string.menu_finish_select)
+    val sQuoted = stringResource(R.string.bubble_quoted)
+    val sCopied = stringResource(R.string.chat_copied)
+    val sImageLabel = stringResource(R.string.image_label)
+
+    val radius = if (bubble.cornerRadius > 0) bubble.cornerRadius else theme.bubbleRadius
+    val bubbleShape = RoundedCornerShape(
+        topStart = radius.dp,
+        topEnd = radius.dp,
+        bottomEnd = if (radius >= 20) radius.dp else 6.dp,
+        bottomStart = radius.dp,
     )
-    val userBubbleColor = pluginColor(bubble.userBg)
-        ?: if (selectionMode && isSelected)
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
-        else MaterialTheme.colorScheme.primaryContainer
+
+    val isDeep = theme.useInverseUserBubble
+    val bubbleColor: Color = pluginColor(bubble.userBg)
+        ?: when {
+            selectionMode && isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+            isDeep -> MaterialTheme.colorScheme.inverseSurface
+            else -> MaterialTheme.colorScheme.primaryContainer
+        }
+    val textColor: Color = pluginColor(bubble.textColor)
+        ?: if (isDeep) MaterialTheme.colorScheme.inverseOnSurface
+        else MaterialTheme.colorScheme.onPrimaryContainer
+
     val bubbleFontSize = if (bubble.fontSize > 0) bubble.fontSize.sp else 15.sp
     val bubbleHPad = if (bubble.horizontalPadding > 0) bubble.horizontalPadding.dp else 12.dp
     val bubbleVPad = if (bubble.verticalPadding > 0) bubble.verticalPadding.dp else 9.dp
-    val bubbleTextColor = pluginColor(bubble.textColor) ?: MaterialTheme.colorScheme.onPrimaryContainer
+    val borderColor = themeColorOf(theme.bubbleBorderRole)
+    val border = if (theme.bubbleBorderWidth > 0)
+        BorderStroke(theme.bubbleBorderWidth.dp, borderColor) else null
 
-    Column(
-        modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.End,
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
     ) {
-        if (message.files.isNotEmpty() || message.images.isNotEmpty()) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(end = 4.dp, bottom = 4.dp),
-            ) {
-                message.files.forEach { path ->
-                    val name = runCatching { File(path).name }.getOrDefault(path).take(14)
-                    Chip(icon = Icons.Default.InsertDriveFile, text = name)
-                }
-                message.images.forEachIndexed { idx, _ ->
-                    Chip(icon = Icons.Default.Image, text = "图片 ${idx + 1}")
-                }
-            }
-        }
-
-                Surface(
-            shape = userBubbleShape,
-            color = userBubbleColor,
-            modifier = Modifier
-                .widthIn(max = 320.dp)
-                .combinedClickable(
-                    onClick = { if (selectionMode) onToggleSelect() },
-                    onLongClick = { if (!selectionMode) showMenu = true },
-                ),
-        ) {
-            Column(Modifier.padding(horizontal = bubbleHPad, vertical = bubbleVPad)) {
-                if (selectionMode) {
+        Box(Modifier.wrapContentWidth()) {
+            Column(horizontalAlignment = Alignment.End) {
+                if (message.files.isNotEmpty() || message.images.isNotEmpty()) {
                     Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(end = 4.dp, bottom = 4.dp),
                     ) {
-                        Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
-                        Text(
-                            "选择此条", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.weight(1f))
+                        message.files.forEach { path ->
+                            val name = runCatching { File(path).name }.getOrDefault(path).take(14)
+                            AttachChip(icon = Icons.Default.InsertDriveFile, text = name)
+                        }
+                        message.images.forEachIndexed { idx, _ ->
+                            AttachChip(icon = Icons.Default.Image, text = "$sImageLabel ${idx + 1}")
+                        }
                     }
                 }
 
-                if (message.quotedContent.isNotBlank()) {
+                HardShadowWrapper(
+                    enabled = theme.useHardShadow,
+                    offsetX = theme.hardShadowOffsetX,
+                    offsetY = theme.hardShadowOffsetY,
+                    shape = bubbleShape,
+                    color = themeColorOf(theme.hardShadowColorRole),
+                    modifier = Modifier.widthIn(max = 320.dp),
+                ) {
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        shape = bubbleShape,
+                        color = bubbleColor,
+                        border = border,
+                        modifier = Modifier
+                            .widthIn(max = 320.dp)
+                            .combinedClickable(
+                                onClick = { if (selectionMode) onToggleSelect() },
+                                onLongClick = { if (!selectionMode) showMenu = true },
+                            ),
                     ) {
-                        Column(Modifier.padding(6.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(10.dp),
-                                    tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(4.dp))
-                                Text("引用", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.padding(horizontal = bubbleHPad, vertical = bubbleVPad)) {
+                            if (selectionMode) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
+                                    Text(sSelecting, fontSize = 11.sp, color = textColor)
+                                    Spacer(Modifier.weight(1f))
+                                }
                             }
-                            Text(
-                                message.quotedContent.take(120) +
-                                    if (message.quotedContent.length > 120) "…" else "",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
-                            )
-                        }
-                    }
-                }
 
-                                if (displayText.isNotBlank()) {
-                    if (selectingText) {
-                        SelectionContainer {
-                            Text(
-                                displayText, fontSize = bubbleFontSize,
-                                color = bubbleTextColor,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            if (message.quotedContent.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isDeep) Color.White.copy(alpha = 0.12f)
+                                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                ) {
+                                    Column(Modifier.padding(6.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(10.dp), tint = textColor)
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(sQuoted, fontSize = 10.sp, color = textColor)
+                                        }
+                                        Text(
+                                            message.quotedContent.take(120) +
+                                                if (message.quotedContent.length > 120) "…" else "",
+                                            fontSize = 11.sp,
+                                            color = if (isDeep) textColor.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 3,
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (displayText.isNotBlank()) {
+                                if (selectingText) {
+                                    SelectionContainer {
+                                        Text(displayText, fontSize = bubbleFontSize, color = textColor,
+                                            modifier = Modifier.fillMaxWidth())
+                                    }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                        TextButton(onClick = { selectingText = false }) {
+                                            Text(sFinishSelect, fontSize = 11.sp, color = textColor)
+                                        }
+                                    }
+                                } else {
+                                    Text(displayText, fontSize = bubbleFontSize, color = textColor)
+                                }
+                            }
                         }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            TextButton(onClick = {
-                                selectingText = false
-                                val sel = ""  // 由系统选择手柄处理复制；此处提供"完成"
-                            }) { Text("完成选择", fontSize = 11.sp) }
-                        }
-                                        } else {
-                        Text(displayText, fontSize = bubbleFontSize, color = bubbleTextColor)
                     }
                 }
             }
-        }
 
-                                                // ⭐ 第五轮 #1/#8：长按操作菜单改 material3 DropdownMenu
-        // （overlay 浮层不挤占布局 + 内建展开/收起过渡动画 + 锚定气泡附近，替代旧 Box+matchParentSize 撑高 item）
-                // ⭐ material3 1.3.0 DropdownMenu 没有 containerColor 直传参数（须用 DropdownMenuDefaults.colors），
-        //    用默认色（已是 surface）最稳，避免编译报错
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.widthIn(min = 150.dp),
-            content = {
+            AnimatedPopup(
+                visible = showMenu,
+                alignment = Alignment.BottomEnd,
+                offset = IntOffset(0, 8),
+                onDismissRequest = { showMenu = false },
+                transformOrigin = TransformOrigin(1f, 0f),
+            ) {
                 AppMenuPanel(
                     items = listOf(
-                        AppMenuItem(label = "修改", icon = Icons.Default.Edit),
-                        AppMenuItem(label = "删除", icon = Icons.Default.Delete),
-                        AppMenuItem(label = "多选", icon = Icons.Default.CheckCircle),
-                        AppMenuItem(label = "复制", icon = Icons.Default.ContentCopy),
-                        AppMenuItem(label = "选择文本", icon = Icons.Default.TextFields),
+                        AppMenuItem(label = sMenuEdit, icon = Icons.Default.Edit),
+                        AppMenuItem(label = sMenuDelete, icon = Icons.Default.Delete),
+                        AppMenuItem(label = sMenuMulti, icon = Icons.Default.CheckCircle),
+                        AppMenuItem(label = sMenuCopy, icon = Icons.Default.ContentCopy),
+                        AppMenuItem(label = sMenuSelectText, icon = Icons.Default.TextFields),
                     ),
                     onPick = { idx ->
                         when (idx) {
@@ -257,68 +297,62 @@ private fun UserBubble(
                                 showMenu = false
                                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 cm.setPrimaryClip(ClipData.newPlainText("ai", displayText))
-                                Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, sCopied, Toast.LENGTH_SHORT).show()
                             }
                             4 -> { showMenu = false; selectingText = true }
                         }
                     },
-                    chrome = false,
-                    title = "操作",
+                    chrome = true,
+                    title = sMenuTitle,
+                    compact = true,
+                    maxWidth = 180.dp,
                 )
-            },
-        )
+            }
 
-        // ⭐ 修改对话框（草稿：退出软件或切换对话即清除，不落盘）
-        if (editOpen) {
-            AlertDialog(
-                onDismissRequest = { editOpen = false },
-                                title = { Text("修改消息") },
-                text = {
-                    Column {
-                        Text("「保存」仅改显示、不重新生成；「保存并重新生成」会用新内容重发此条并让 AI 重新回答。",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = editText,
-                            onValueChange = { editText = it },
-                            modifier = Modifier.fillMaxWidth().height(140.dp),
-                            placeholder = { Text("输入要显示的内容…", fontSize = 13.sp) },
-                        )
-                    }
-                },
-                                confirmButton = {
-                    // ⭐ v1.1.0：两个保存选项——「保存」仅改显示；「保存并重新生成」用新内容重发此条并让 AI 重新回答
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            onEditUser(editText.trim())
-                            editOpen = false
-                        }) { Text("保存", fontSize = 13.sp) }
-                        TextButton(onClick = {
-                            onResendUser(editText.trim())
-                            editOpen = false
-                        }) {
-                            Text("保存并重新生成", fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.primary)
+            if (editOpen) {
+                AlertDialog(
+                    onDismissRequest = { editOpen = false },
+                    title = { Text(sEditTitle) },
+                    text = {
+                        Column {
+                            Text(sEditDesc,
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = editText,
+                                onValueChange = { editText = it },
+                                modifier = Modifier.fillMaxWidth().height(140.dp),
+                                placeholder = { Text(sEditPlaceholder, fontSize = 13.sp) },
+                            )
                         }
-                    }
-                },
-                dismissButton = { TextButton(onClick = { editOpen = false }) { Text("取消", fontSize = 13.sp) } },
-            )
-        }
+                    },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = {
+                                onEditUser(editText.trim()); editOpen = false
+                            }) { Text(sEditSave, fontSize = 13.sp) }
+                            TextButton(onClick = {
+                                onResendUser(editText.trim()); editOpen = false
+                            }) { Text(sEditResend, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary) }
+                        }
+                    },
+                    dismissButton = { TextButton(onClick = { editOpen = false }) { Text(sCancel, fontSize = 13.sp) } },
+                )
+            }
 
-        // ⭐ 删除确认对话框
-        if (confirmDelete) {
-            AlertDialog(
-                onDismissRequest = { confirmDelete = false },
-                title = { Text("删除消息") },
-                text = { Text("确定删除这条消息吗？（不可恢复）", fontSize = 14.sp) },
-                confirmButton = {
-                    TextButton(onClick = { confirmDelete = false; onDeleteMessage() }) {
-                        Text("删除", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消", fontSize = 13.sp) } },
-            )
+            if (confirmDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmDelete = false },
+                    title = { Text(sDeleteTitle) },
+                    text = { Text(sDeleteConfirm, fontSize = 14.sp) },
+                    confirmButton = {
+                        TextButton(onClick = { confirmDelete = false; onDeleteMessage() }) {
+                            Text(sDelete, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(sCancel, fontSize = 13.sp) } },
+                )
+            }
         }
     }
 }
@@ -335,7 +369,7 @@ private fun extractUserDisplayContent(fullContent: String): String {
 }
 
 @Composable
-private fun Chip(icon: ImageVector, text: String) {
+private fun AttachChip(icon: ImageVector, text: String) {
     Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, Modifier.size(12.dp))
@@ -344,6 +378,8 @@ private fun Chip(icon: ImageVector, text: String) {
         }
     }
 }
+
+// ==================== AI 消息气泡 ====================
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -362,48 +398,104 @@ private fun AssistantBubble(
     onToggleSelect: () -> Unit,
     modifier: Modifier,
 ) {
-        // ⭐ v1.1.0 #3：插件可覆盖 AI 气泡圆角 / 配色 / 字号 / 留白
+    val theme = LocalThemeStyleConfig.current
     val bubble = activeChatBubbleStyle()
-    val aiBubbleShape = androidx.compose.foundation.shape.RoundedCornerShape(
-        if (bubble.cornerRadius.dp < 20.dp) 4.dp else bubble.cornerRadius.dp,
-        bubble.cornerRadius.dp, bubble.cornerRadius.dp, bubble.cornerRadius.dp,
+    val sSelecting = stringResource(R.string.menu_selecting)
+
+    val radius = if (bubble.cornerRadius > 0) bubble.cornerRadius else theme.bubbleRadius
+    val aiShape = RoundedCornerShape(
+        topStart = if (radius >= 20) radius.dp else 6.dp,
+        topEnd = radius.dp,
+        bottomEnd = radius.dp,
+        bottomStart = radius.dp,
     )
-    val aiBubbleColor = pluginColor(bubble.assistantBg)
-        ?: if (selectionMode && isSelected)
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-        else MaterialTheme.colorScheme.surface
+    val aiColor = pluginColor(bubble.assistantBg)
+        ?: when {
+            selectionMode && isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            else -> MaterialTheme.colorScheme.surface
+        }
     val aiFontSize = if (bubble.fontSize > 0) bubble.fontSize.sp else 15.sp
     val aiHPad = if (bubble.horizontalPadding > 0) bubble.horizontalPadding.dp else 12.dp
     val aiVPad = if (bubble.verticalPadding > 0) bubble.verticalPadding.dp else 9.dp
+
+    val borderColor = themeColorOf(theme.bubbleBorderRole)
+    val border = if (theme.bubbleBorderWidth > 0 && theme.showAiBubble)
+        BorderStroke(theme.bubbleBorderWidth.dp, borderColor) else null
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
 
         if (message.reasoning.isNotBlank()) ReasoningPanel(message.reasoning, streaming = message.isStreaming)
 
+        if (message.audioPath.isNotBlank()) {
+            AudioBubble(path = message.audioPath, durationMs = message.audioDurationMs)
+        }
+        if (message.imagePath.isNotBlank()) {
+            ImageBubble(path = message.imagePath)
+        }
+        if (message.videoPath.isNotBlank()) {
+            VideoBubble(path = message.videoPath, durationMs = message.videoDurationMs)
+        }
+
         if (message.content.isNotBlank() ||
             (message.isStreaming && message.toolCalls.isEmpty() && message.reasoning.isBlank())) {
-            Surface(
-                shape = aiBubbleShape,
-                color = aiBubbleColor,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                modifier = Modifier.combinedClickable(
-                    onClick = { if (selectionMode) onToggleSelect() },
-                    onLongClick = { if (selectionMode) onToggleSelect() },
-                ),
-            ) {
-                Column(Modifier.padding(horizontal = aiHPad, vertical = aiVPad)) {
+
+            if (!theme.showAiBubble) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 2.dp, vertical = 2.dp)
+                        .combinedClickable(
+                            onClick = { if (selectionMode) onToggleSelect() },
+                            onLongClick = { if (selectionMode) onToggleSelect() },
+                        ),
+                ) {
                     if (selectionMode) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
-                            Text("选择此条", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                            Text(sSelecting, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.weight(1f))
                         }
                     }
-                                        Box {
-                        MarkdownText(
-                            text = if (message.isStreaming) message.content + " ▍" else message.content,
-                            fontSize = aiFontSize,
-                        )
+                    MarkdownText(
+                        text = if (message.isStreaming) message.content + " ▍" else message.content,
+                        fontSize = aiFontSize,
+                    )
+                }
+            } else {
+                HardShadowWrapper(
+                    enabled = theme.useHardShadow,
+                    offsetX = theme.hardShadowOffsetX,
+                    offsetY = theme.hardShadowOffsetY,
+                    shape = aiShape,
+                    color = themeColorOf(theme.hardShadowColorRole),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Surface(
+                        shape = aiShape,
+                        color = aiColor,
+                        border = border,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { if (selectionMode) onToggleSelect() },
+                                onLongClick = { if (selectionMode) onToggleSelect() },
+                            ),
+                    ) {
+                        Column(Modifier.padding(horizontal = aiHPad, vertical = aiVPad)) {
+                            if (selectionMode) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
+                                    Text(sSelecting, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                            Box {
+                                MarkdownText(
+                                    text = if (message.isStreaming) message.content + " ▍" else message.content,
+                                    fontSize = aiFontSize,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -447,41 +539,50 @@ private fun AssistantToolbar(
     onRetry: () -> Unit,
     onContinue: () -> Unit,
 ) {
-                        var showMore by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
+    val sQuote = stringResource(R.string.toolbar_quote)
+    val sSpeak = stringResource(R.string.toolbar_speak)
+    val sCopy = stringResource(R.string.toolbar_copy)
+    val sRetry = stringResource(R.string.toolbar_retry)
+    val sMore = stringResource(R.string.toolbar_more)
+    val sContinue = stringResource(R.string.toolbar_continue)
+    val sNone = stringResource(R.string.toolbar_none)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.weight(1f))
-        ToolbarBtn("引用追问", Icons.AutoMirrored.Filled.Reply, onQuote)
-        ToolbarBtn("朗读", Icons.Default.VolumeUp, onSpeak)
-        ToolbarBtn("复制", Icons.Default.ContentCopy, onCopy)
-        ToolbarBtn("重新生成", Icons.Default.Refresh, onRetry)
-        // ⭐ 第五轮：「更多」改 material3 DropdownMenu（锚定本按钮右下角 + 浮层不挤占 + 内建展开/收起动画 + wrap 不过长）
+        ToolbarBtn(sQuote, Icons.AutoMirrored.Filled.Reply, onQuote)
+        ToolbarBtn(sSpeak, Icons.Default.VolumeUp, onSpeak)
+        ToolbarBtn(sCopy, Icons.Default.ContentCopy, onCopy)
+        ToolbarBtn(sRetry, Icons.Default.Refresh, onRetry)
         Box {
-            ToolbarBtn("更多", Icons.Default.MoreHoriz) { showMore = !showMore }
-                                                DropdownMenu(
-                expanded = showMore,
+            ToolbarBtn(sMore, Icons.Default.MoreHoriz) { showMore = !showMore }
+            AnimatedPopup(
+                visible = showMore,
+                alignment = Alignment.TopEnd,
+                offset = IntOffset(0, -8),
                 onDismissRequest = { showMore = false },
-                modifier = Modifier.widthIn(min = 120.dp),
-                shape = RoundedCornerShape(10.dp),
-                content = {
-                    AppMenuPanel(
-                        items = if (showContinue) {
-                            listOf(AppMenuItem(label = "▶ 继续生成"))
-                        } else {
-                            listOf(AppMenuItem(label = "（无更多操作）", enabled = false))
-                        },
-                        onPick = { _ ->
-                            showMore = false
-                            if (showContinue) onContinue()
-                        },
-                        chrome = false,
-                        title = "更多操作",
-                    )
-                },
-            )
+                transformOrigin = TransformOrigin(1f, 1f),
+            ) {
+                AppMenuPanel(
+                    items = if (showContinue) {
+                        listOf(AppMenuItem(label = sContinue))
+                    } else {
+                        listOf(AppMenuItem(label = sNone, enabled = false))
+                    },
+                    onPick = { _ ->
+                        showMore = false
+                        if (showContinue) onContinue()
+                    },
+                    chrome = true,
+                    title = sMore,
+                    compact = true,
+                    maxWidth = 160.dp,
+                )
+            }
         }
     }
 }
@@ -501,50 +602,93 @@ private fun ToolbarBtn(text: String, icon: ImageVector, onClick: () -> Unit) {
     }
 }
 
+// ==================== 思考过程 ====================
+
 @Composable
 private fun ReasoningPanel(text: String, streaming: Boolean = false) {
-    var expanded by remember(streaming) { mutableStateOf(streaming) }
+    val theme = LocalThemeStyleConfig.current
+    var expanded by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
-    LaunchedEffect(text) {
-        if (expanded && text.isNotEmpty()) scrollState.scrollTo(scrollState.maxValue)
+    val sReasoning = stringResource(R.string.reasoning_title)
+
+    LaunchedEffect(text, expanded) {
+        if (expanded && streaming && text.isNotEmpty()) {
+            runCatching { scrollState.scrollTo(scrollState.maxValue) }
+        }
     }
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(180),
+        label = "reasoning_arrow",
+    )
+    val preview = text.replace("\n", " ").take(100)
+
+    val panelBg = themeColorOf(theme.toolBgRole)
+    val panelBorder = if (theme.toolBorderWidth > 0)
+        BorderStroke(theme.toolBorderWidth.dp, themeColorOf(theme.toolBorderRole)) else null
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(theme.toolRadius.dp))
+            .then(if (panelBorder != null) Modifier.border(panelBorder, RoundedCornerShape(theme.toolRadius.dp)) else Modifier)
+            .background(panelBg)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { expanded = !expanded }
+            .padding(horizontal = 8.dp, vertical = 5.dp),
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("💭 思考过程", fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary)
-                if (streaming) {
-                    Spacer(Modifier.width(6.dp))
-                    Text("生成中…", fontSize = 10.sp, color = MaterialTheme.colorScheme.tertiary)
-                }
-                Spacer(Modifier.weight(1f))
-                Text(if (expanded) "▲" else "▼", fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.KeyboardArrowRight,
+                contentDescription = if (expanded) stringResource(R.string.conv_arrow_collapse)
+                else stringResource(R.string.conv_arrow_expand),
+                modifier = Modifier
+                    .size(12.dp)
+                    .graphicsLayer { rotationZ = arrowRotation },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(sReasoning, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                preview + if (text.length > 100) "…" else "",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (streaming) {
+                Spacer(Modifier.width(6.dp))
+                CircularProgressIndicator(
+                    Modifier.size(10.dp),
+                    strokeWidth = 1.5.dp,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
             }
-            Spacer(Modifier.height(3.dp))
-            if (expanded) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 300.dp)
-                        .verticalScroll(scrollState),
-                ) {
-                    Text(
-                        text = text,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(180)) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(120)),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(scrollState),
+            ) {
                 Text(
-                    text = text.take(80) + if (text.length > 80) "…" else "",
+                    text = text,
                     fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
                 )
             }
         }

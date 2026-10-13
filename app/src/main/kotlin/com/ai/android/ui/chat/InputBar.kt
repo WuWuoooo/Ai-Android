@@ -2,43 +2,43 @@ package com.ai.android.ui.chat
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ai.android.R
+import com.ai.android.model.SessionStats
+import com.ai.android.ui.theme.LocalThemeStyleConfig
+import com.ai.android.ui.theme.themeColorOf
 import java.io.File
 
-/**
- * ⭐ v1.2.0 输入框（问题 2 重做）：
- *
- * 规格（主人要求）：
- *  - **加号 / 语音 / 发送 都放进输入框里面**（不再是框外一排按钮）。
- *  - **只保留「加号」和「右侧按钮」两个控件**（去掉原来独立的语音 + 发送双按钮）。
- *  - 右侧按钮三态：
- *      · 输入框**为空** → 显示「语音」（Mic）：点击开始录音 → 转写完成**立即发送**
- *      · 输入框**有内容** → 显示「发送」（Send）
- *      · **正在生成** → 显示「暂停」（Stop）
- *  - 语音输入完成后**立即自动发送**（不再只是回填输入框）。
- */
 @Composable
 fun InputBar(
     value: String,
@@ -53,43 +53,34 @@ fun InputBar(
     attachedImages: List<String> = emptyList(),
     onRemoveAttachment: (String) -> Unit = {},
     onRemoveImage: (String) -> Unit = {},
-    /** 引用的消息内容（空串表示无引用） */
     quotedContent: String = "",
     onClearQuote: () -> Unit = {},
-    /** 音视频通话（v1.0.0-beta4） */
     onStartVoiceCall: () -> Unit = {},
     onStartVideoCall: () -> Unit = {},
-        /** ⭐ v1.2.0 #3：语音输入控制器（录音 → ASR → 立即发送） */
     voiceController: VoiceInputController? = null,
-    /** 语音转写结果 → 立即发送 */
     onVoiceAutoSend: (String) -> Unit = {},
-                // ⭐ v1.2.0-next：输入框下方显示当前模型名（参考图二 DeepSeek V4.1flash），点击可切换模型
-        modelLabel: String = "",
+    modelLabel: String = "",
     onSwitchModel: () -> Unit = {},
-                /** ⭐ v1.2.0-next #10：加号菜单 toggle（自绘 AppMenuPanel，由 ChatScreen 顶层渲染） */
     onToggleAddMenu: () -> Unit = {},
-    /** ⭐ 第五轮 #2：模型菜单是否展开（箭头随之旋转 90°，提示当前可切模型） */
     modelMenuOpen: Boolean = false,
+    sessionStats: SessionStats = SessionStats(),
     modifier: Modifier = Modifier,
 ) {
-        var voiceActive by remember { mutableStateOf(false) }   // 是否正在录音/转写
-    // ⭐ 第五轮 #2：模型名行箭头随菜单展开旋转（展开 90°，收起 0°），用 animateFloatAsState 平滑过渡
+    val theme = LocalThemeStyleConfig.current
+    var voiceActive by remember { mutableStateOf(false) }
+
     val modelArrowAngle by animateFloatAsState(
-        targetValue = if (modelMenuOpen) 90f else 0f,
-        animationSpec = tween(200),
+        targetValue = if (modelMenuOpen) 180f else 0f,
+        animationSpec = tween(220),
         label = "model_arrow",
     )
 
-        // 语音控制器回调：转写结果 → 立即发送（主人要求「输入完立即发送」）
     LaunchedEffect(voiceController) {
         voiceController?.apply {
             onResult = { text ->
                 voiceActive = false
-                if (text.isNotBlank()) {
-                    onVoiceAutoSend(text)   // ⭐ 立即自动发送
-                }
+                if (text.isNotBlank()) onVoiceAutoSend(text)
             }
-            // ⭐ hotfix #1：录音太短 / 缺权限 / 识别失败等错误复位 UI，避免卡在「正在录音」
             onError = { voiceActive = false }
         }
     }
@@ -98,12 +89,15 @@ fun InputBar(
     }
 
     val hasText = value.isNotBlank()
-    val micEnabled = !isRunning && voiceController != null
+    val inputShape = RoundedCornerShape(theme.inputRadius.dp)
+    val inputBorderColor = themeColorOf(theme.inputBorderRole)
+    val inputBorder = if (theme.inputBorderWidth > 0)
+        BorderStroke(theme.inputBorderWidth.dp, inputBorderColor) else null
 
     Surface(
         modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
+        tonalElevation = 0.dp,
     ) {
         Column {
             if (isRunning) {
@@ -113,12 +107,14 @@ fun InputBar(
                 ) {
                     CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text(stateText.ifBlank { "Agent 工作中…" }, fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        stateText.ifBlank { stringResource(R.string.chat_working) },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
 
-            // 引用框
             if (quotedContent.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -129,14 +125,12 @@ fun InputBar(
                         Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Reply, null,
-                            Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(6.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("引用", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.bubble_quoted),
+                                fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                             Text(
                                 quotedContent.take(80).replace("\n", " ") +
                                     if (quotedContent.length > 80) "…" else "",
@@ -146,13 +140,12 @@ fun InputBar(
                             )
                         }
                         IconButton(onClick = onClearQuote, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, "取消引用", Modifier.size(14.dp))
+                            Icon(Icons.Default.Close, stringResource(R.string.cancel), Modifier.size(14.dp))
                         }
                     }
                 }
             }
 
-            // 附件 chips
             if (attachedFiles.isNotEmpty() || attachedImages.isNotEmpty()) {
                 Row(
                     Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -170,7 +163,7 @@ fun InputBar(
                     attachedImages.forEachIndexed { idx, img ->
                         AssistChip(
                             onClick = { onRemoveImage(img) },
-                            label = { Text("图片 ${idx + 1}", fontSize = 11.sp) },
+                            label = { Text("${stringResource(R.string.image_label)} ${idx + 1}", fontSize = 11.sp) },
                             leadingIcon = { Icon(Icons.Default.Image, null, Modifier.size(14.dp)) },
                             trailingIcon = { Icon(Icons.Default.Close, null, Modifier.size(14.dp)) },
                         )
@@ -178,7 +171,6 @@ fun InputBar(
                 }
             }
 
-            // ⭐ 录音 / 转写状态提示行
             if (voiceActive && !isRunning) {
                 val p = voiceController?.phase
                 Row(
@@ -186,9 +178,9 @@ fun InputBar(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val label = when {
-                        p == VoiceInputController.Phase.RECORDING -> "正在录音…（说完会自动转写并发送）"
-                        p == VoiceInputController.Phase.LIVE -> "正在识别…（说一句话）"
-                        p == VoiceInputController.Phase.TRANSCRIBING -> "转写中…"
+                        p == VoiceInputController.Phase.RECORDING -> stringResource(R.string.input_speaking_record)
+                        p == VoiceInputController.Phase.LIVE -> stringResource(R.string.input_speaking_live)
+                        p == VoiceInputController.Phase.TRANSCRIBING -> stringResource(R.string.input_speaking_transcribe)
                         else -> ""
                     }
                     if (label.isNotEmpty()) {
@@ -200,106 +192,174 @@ fun InputBar(
                 }
             }
 
-            // ==================== ⭐ 输入框：加号 + 文本框 + 右侧按钮（全在框内）====================
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                                // 左侧：加号（放进输入框胶囊内）
-                // ⭐ v1.2.0-next #10：加号菜单改自绘 AppMenuPanel（ChatScreen 顶层渲染，避免 bottomBar 裁剪）
                 IconButton(onClick = onToggleAddMenu) {
-                    Icon(Icons.Default.Add, "添加附件", Modifier.size(22.dp))
+                    Icon(Icons.Default.Add, stringResource(R.string.chat_add), Modifier.size(22.dp))
                 }
 
-                                // 中间：多行文本框（圆角胶囊）
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("发消息或按住说话", fontSize = 14.sp) },
-                    maxLines = 5,
-                    shape = RoundedCornerShape(22.dp),
-                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(inputShape)
+                        .then(
+                            if (inputBorder != null)
+                                Modifier.border(inputBorder, inputShape)
+                            else Modifier
+                        )
+                        .background(
+                            when (theme.inputBorderWidth) {
+                                0 -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                else -> MaterialTheme.colorScheme.surface
+                            }
+                        )
+                        .padding(horizontal = 4.dp),
+                ) {
+                    TextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.chat_input_placeholder),
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        maxLines = 5,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            disabledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        ),
+                    )
+                }
 
                 Spacer(Modifier.width(6.dp))
 
-                                // 右侧：三态按钮（语音 / 发送 / 暂停）
                 if (isRunning) {
                     FilledIconButton(
                         onClick = onStop,
                         modifier = Modifier.size(46.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.error),
-                    ) { Icon(Icons.Default.Stop, "暂停", tint = MaterialTheme.colorScheme.onError) }
+                    ) { Icon(Icons.Default.Stop, stringResource(R.string.chat_stop),
+                        tint = MaterialTheme.colorScheme.onError) }
                 } else if (hasText) {
-                    // 有内容 → 发送
                     FilledIconButton(
                         onClick = { onSend(value) },
                         modifier = Modifier.size(46.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary),
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, "发送") }
-                                                } else {
-                                        // 空框 → 语音（⭐ hotfix #1：点一下开始录音、再点一下结束并自动转写发送。
-                    // 缺权限 / 系统识别器不可用 / 录音太短，控制器都会 Toast，绝不静默消失）
-                    FilledIconButton(
-                        onClick = {
-                            val c = voiceController ?: return@FilledIconButton
-                            if (voiceActive) {
-                                // 结束 → 转写 → 立即发送（onVoiceAutoSend / onError 回调复位 voiceActive）
-                                c.finish()
-                            } else {
-                                // 开始；失败（缺权限等）控制器已 Toast，此时不置 active
-                                val started = c.begin()
-                                if (started) voiceActive = true
-                            }
-                        },
-                        modifier = Modifier.size(46.dp)
-                            .then(if (voiceActive) Modifier.border(2.dp, MaterialTheme.colorScheme.error, CircleShape) else Modifier),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (voiceActive) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.primary,
-                            contentColor = if (voiceActive) MaterialTheme.colorScheme.onError
-                            else MaterialTheme.colorScheme.onPrimary,
-                        ),
+                    ) { Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.chat_send)) }
+                } else {
+                    Box(
+                        Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (voiceActive) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary
+                            )
+                            .then(
+                                if (voiceActive)
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.error, CircleShape)
+                                else Modifier
+                            )
+                            .pointerInput(voiceController) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    val c = voiceController
+                                    if (c != null) {
+                                        val started = c.begin()
+                                        if (started) voiceActive = true
+                                        waitForUpOrCancellation()
+                                        if (voiceActive) c.finish()
+                                    } else {
+                                        waitForUpOrCancellation()
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Default.Mic,
-                            if (voiceActive) "停止录音" else "语音输入",
+                        Icon(
+                            Icons.Default.Mic,
+                            contentDescription = stringResource(R.string.chat_input_placeholder),
                             tint = if (voiceActive) MaterialTheme.colorScheme.onError
-                            else MaterialTheme.colorScheme.onPrimary)
+                            else MaterialTheme.colorScheme.onPrimary,
+                        )
                     }
                 }
             }
 
-                        // ⭐ v1.2.0-next：输入框下方显示当前模型名（参考图二 DeepSeek V4.1flash），点击切换模型
-            // #8：vertical 6dp→3dp，让模型名行贴近输入框，减少上方留白
-            if (modelLabel.isNotBlank()) {
+            val statsText = buildStatsText(sessionStats)
+            if (statsText.isNotBlank() || modelLabel.isNotBlank()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onSwitchModel)
                         .padding(horizontal = 20.dp, vertical = 3.dp),
-                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        modelLabel,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                                        Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "切换模型",
-                        // ⭐ 第五轮 #2：箭头随模型菜单展开旋转 90°（modelMenuOpen=true 时）
-                        modifier = Modifier
-                            .graphicsLayer { rotationZ = modelArrowAngle }
-                            .size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (statsText.isNotBlank()) {
+                        Text(
+                            text = statsText,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            maxLines = 1,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (modelLabel.isNotBlank()) {
+                        Row(
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onSwitchModel,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                modelLabel,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.input_switch_model),
+                                modifier = Modifier
+                                    .graphicsLayer { rotationZ = modelArrowAngle }
+                                    .size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+private fun buildStatsText(s: SessionStats): String {
+    val parts = mutableListOf<String>()
+    if (s.round > 0) {
+        val roundPart = if (s.steps > 0) "${s.round}轮 ${s.steps}步" else "${s.round}轮"
+        parts += roundPart
+    }
+    if (s.tokensPerSec > 0) parts += "${"%.0f".format(s.tokensPerSec)} tok/s"
+    if (s.cacheHitRate > 0) parts += "命中 ${"%.0f".format(s.cacheHitRate)}%"
+    if (s.totalTokens > 0) parts += formatTokens(s.totalTokens) + " tok"
+    return parts.joinToString(" · ")
+}
+
+private fun formatTokens(n: Int): String = when {
+    n < 1000 -> "$n"
+    n < 1_000_000 -> "${"%.1f".format(n / 1000.0)}K"
+    else -> "${"%.1f".format(n / 1_000_000.0)}M"
 }

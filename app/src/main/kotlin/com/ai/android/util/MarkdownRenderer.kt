@@ -55,22 +55,61 @@ enum class CellAlign { LEFT, CENTER, RIGHT }
 
 /** 常见 LaTeX 命令（用于宽松识别裸公式行） */
 private val LATEX_HINT = Regex(
-    """\\(frac|sqrt|int|iint|iiint|oint|sum|prod|lim|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|theta|lambda|mu|nu|pi|rho|sigma|phi|varphi|chi|psi|omega|vec|hat|bar|dot|ddot|tilde|times|cdot|pm|mp|leq|geq|neq|approx|equiv|infty|mathbb|mathcal|mathbf|mathrm|text|textbf|rightarrow|leftarrow|to|left|right|begin|end)\b"""
+    """\\(frac|sqrt|int|iint|iiint|oint|sum|prod|lim|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|theta|lambda|mu|nu|pi|rho|sigma|phi|varphi|chi|psi|omega|vec|hat|bar|dot|ddot|tilde|times|cdot|pm|mp|leq|geq|neq|approx|equiv|infty|mathbb|mathcal|mathbf|mathrm|mathsf|textsf|texttt|text|textbf|rightarrow|leftarrow|to|left|right|begin|end)\b"""
 )
 
+/** 文本样式命令（长名在前，避免 \text 抢占 \textsf） */
+private const val TEXT_STYLE_CMDS =
+    "textsf|texttt|textnormal|textbf|textmd|textrm|textup|textit|textsl|textsc|" +
+    "mathbf|mathsf|mathtt|mathrm|mathit|mathnormal|mathcal|mathfrak|" +
+    "text"
+
 /**
- * ⭐ 第10项：JLatexMath 不支持 \text / \mathrm / \, 等命令。
- * 预处理把 \text{X}、\mathrm{X} 直接替换为 X（化学式如 \text{H}_2\text{SO}_4 → H_2SO_4），
- * 去掉 \, \; 间隔；其余交给 JLatexMath。让 \text{Al} + \text{H}_2\text{SO}_4 \rightarrow ... 可正常渲染。
+ * ⭐ LaTeX 预处理：把 JLatexMath 不支持的命令替换/剥离。
+ *
+ * 关键修复（v2）：
+ *  1. alternation 长名在前 —— `textsf` 必须排在 `text` 之前，
+ *     否则 `\textsf{好}` 会先匹配 `\text`，剥离后留下 `sf{好}` 这种无效命令。
+ *  2. 剥离 `\(` `\)` —— 若公式块里混入行内公式标记（模型常见），JLatexMath 会报错。
+ *  3. `\hspace*` 支持带星号版本。
  */
 fun sanitizeLatex(src: String): String {
     var s = src
-    // \text{...} / \mathrm{...} / \textbf{...} → 内层内容
-        s = s.replace(Regex("""\\(?:text|mathrm|textbf|mathbf)\{([^{}]*)\}"""), "$1")
-    // 剩余未闭合的 \text{（嵌套括号较少，兜底）
-    s = s.replace(Regex("""\\(?:text|mathrm|textbf|mathbf)"""), "")
-    // 间隔符：\, \; 转普通空格
-    s = s.replace("\\,", " ").replace("\\;", " ")
+
+    // 1. \textsf{...} / \text{...} / \mathbf{...} 等 → 内层内容
+    //    ⚠️ 长名必须排在前面：textsf > text
+    s = s.replace(
+        Regex("""\\(?:$TEXT_STYLE_CMDS)\{([^{}]*)\}"""),
+        "$1"
+    )
+    // 剩余未闭合的（兜底）
+    s = s.replace(
+        Regex("""\\(?:$TEXT_STYLE_CMDS)"""),
+        ""
+    )
+
+    // 2. \hspace{...} / \hspace*{...} → 剥离（任意长度均不支持）
+    s = s.replace(Regex("""\\hspace\*?\{[^}]*\}"""), "")
+    s = s.replace(Regex("""\\hspace\*?"""), "")
+
+    // 3. 各种空格指令 → 普通空格 或 剥离
+    s = s.replace(Regex("""\\quad|\\qquad"""), " ")
+    s = s.replace(Regex("""\\[!,;:]"""), "")
+
+    // 4. \mathop{...} / \mathrel{...} 等 → 内层
+    s = s.replace(
+        Regex("""\\(?:mathop|mathrel|mathbin|mathord|mathopen|mathclose|mathpunct)\{([^{}]*)\}"""),
+        "$1"
+    )
+
+    // 5. ⭐ 剥离混入的 \left( \right) 内外多余标记（JLatexMath 支持 \left( 但若单独出现 \( 会报错）
+    //    注意：\left( \right) 是合法命令，只剥离裸 \( 和 \)
+    s = s.replace(Regex("""\\\("""), "(")
+    s = s.replace(Regex("""\\\)"""), ")")
+
+    // 6. \displaystyle / \textstyle / \scriptstyle / \scriptscriptstyle → 剥离
+    s = s.replace(Regex("""\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\b"""), "")
+
     return s
 }
 
@@ -151,6 +190,24 @@ fun parseMarkdown(md: String): List<MdBlock> {
                 blocks.add(MdBlock.LatexBlock(body.toString().trim()))
             }
 
+            // 整行 \(...\) 块
+            t.startsWith("\\(") -> {
+                flushPara()
+                val body = StringBuilder()
+                val rest = t.removePrefix("\\(")
+                if (rest.contains("\\)")) {
+                    body.append(rest.substringBefore("\\)"))
+                } else {
+                    body.append(rest)
+                    i++
+                    while (i < allLines.size && !allLines[i].contains("\\)")) {
+                        body.append('\n').append(allLines[i]); i++
+                    }
+                    if (i < allLines.size) body.append('\n').append(allLines[i].substringBefore("\\)"))
+                }
+                blocks.add(MdBlock.LatexBlock(body.toString().trim()))
+            }
+
             // 代码块
             t.startsWith("```") -> {
                 flushPara()
@@ -190,7 +247,8 @@ fun parseMarkdown(md: String): List<MdBlock> {
 
             // 宽松 LaTeX 单行：以 \ 开头，含数学命令，不含 \begin/\end 环境
             t.startsWith("\\") && LATEX_HINT.containsMatchIn(t)
-                && !t.startsWith("\\begin") && !t.startsWith("\\end") -> {
+                && !t.startsWith("\\begin") && !t.startsWith("\\end")
+                && !t.startsWith("\\(") && !t.startsWith("\\[") -> {
                 flushPara()
                 blocks.add(MdBlock.LatexBlock(t))
             }
@@ -226,10 +284,14 @@ private fun parseAligns(line: String): List<CellAlign> =
         }
     }
 
-/** 行内格式：**粗体** / `代码` / $公式$ */
+/**
+ * 行内格式：**粗体** / `代码` / $公式$ / \(公式\)
+ */
 fun buildInline(text: String, boldStyle: SpanStyle, codeStyle: SpanStyle): AnnotatedString =
     buildAnnotatedString {
-        val re = Regex("(\\*\\*[^*]+\\*\\*)|(`[^`]+`)|(\\$[^$\\n]+\\$)")
+        val re = Regex(
+            """(\*\*[^*]+\*\*)|(`[^`]+`)|(\\\([^\n]*?\\\))|(\$[^$\n]+\$)"""
+        )
         var last = 0
         re.findAll(text).forEach { m ->
             if (m.range.first > last) append(text.substring(last, m.range.first))
@@ -237,6 +299,20 @@ fun buildInline(text: String, boldStyle: SpanStyle, codeStyle: SpanStyle): Annot
             when {
                 g.startsWith("**") -> withStyle(boldStyle) { append(g.removeSurrounding("**")) }
                 g.startsWith("`") -> withStyle(codeStyle) { append(g.removeSurrounding("`")) }
+                g.startsWith("\\(") -> {
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = codeStyle.background,
+                            color = codeStyle.color,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    ) {
+                        append(" ")
+                        append(g.removeSurrounding("\\(", "\\)"))
+                        append(" ")
+                    }
+                }
                 g.startsWith("$") -> {
                     withStyle(
                         SpanStyle(
@@ -268,13 +344,41 @@ fun LatexView(formula: String, modifier: Modifier = Modifier, inline: Boolean = 
             modifier.fillMaxWidth().background(codeBg, MaterialTheme.shapes.small)
                 .padding(10.dp).horizontalScroll(rememberScrollState())
         ) {
-            Text("$$ $formula $$", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = codeColor)
+            Text("$formula", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = codeColor)
         }
         return
     }
 
-    // ⭐ 第10项：渲染前预处理 \text/\mathrm/\, 等 JLatexMath 不支持的命令
     val sanitized = remember(formula) { sanitizeLatex(formula) }
+
+    // ⭐ 预处理后若只剩空白或普通文本，直接走文本渲染，不再交给 JLatexMath
+    val looksLikePlainText = remember(sanitized) {
+        sanitized.isBlank() || !sanitized.contains('\\') && sanitized.none { it in "_{}^" }
+    }
+
+    if (looksLikePlainText) {
+        if (inline) {
+            Text(
+                sanitized.trim(),
+                modifier = modifier,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            Box(
+                modifier.fillMaxWidth().background(codeBg, MaterialTheme.shapes.small)
+                    .padding(8.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    sanitized.trim(),
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        return
+    }
 
     val drawable = remember(sanitized) {
         runCatching {
@@ -287,7 +391,6 @@ fun LatexView(formula: String, modifier: Modifier = Modifier, inline: Boolean = 
     }
 
     if (inline) {
-        // 行内公式：紧跟文字，不用块级背景框
         Box(modifier, contentAlignment = Alignment.Center) {
             if (drawable != null) {
                 AndroidView(
@@ -300,7 +403,13 @@ fun LatexView(formula: String, modifier: Modifier = Modifier, inline: Boolean = 
                     modifier = Modifier.wrapContentWidth(),
                 )
             } else {
-                Text(sanitized, fontSize = 14.sp, color = codeColor, fontFamily = FontFamily.Monospace)
+                // ⭐ 渲染失败 → 用普通文本兜底，不再显示 $$ 源码
+                Text(
+                    sanitized,
+                    fontSize = 14.sp,
+                    color = codeColor,
+                    fontFamily = FontFamily.Monospace,
+                )
             }
         }
         return
@@ -322,9 +431,12 @@ fun LatexView(formula: String, modifier: Modifier = Modifier, inline: Boolean = 
                 modifier = Modifier.wrapContentWidth(),
             )
         } else {
+            // ⭐ 渲染失败 → 用普通文本兜底，不再显示 "$$ ... $$（渲染失败，显示源码）"
             Text(
-                "$$ $sanitized $$（渲染失败，显示源码）",
-                fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = codeColor,
+                sanitized,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                color = codeColor,
             )
         }
     }
@@ -346,8 +458,8 @@ private fun TableView(
     @Composable
     fun cell(content: String, align: TextAlign, isHeader: Boolean) {
         val dollarCount = content.count { it == '$' }
-        if (dollarCount >= 2) {
-            // ⭐ 第10项：单元格内联公式（按 $...$ 拆段，公式段用 LatexView 行内渲染）
+        val parenCount = Regex("""\\\(""").findAll(content).count()
+        if (dollarCount >= 2 || parenCount >= 1) {
             Row(
                 Modifier
                     .width(cellWidth)
@@ -396,26 +508,43 @@ private fun TableView(
     }
 }
 
-/** 单元格内联公式拆分结果 */
 enum class SegKind { TEXT, MATH }
 data class Seg(val kind: SegKind, val value: String)
 
-/** 把含 $...$ 的文本拆成文本段 / 公式段（公式为相邻两个 $ 之间） */
 private fun splitMath(s: String): List<Seg> {
     val out = mutableListOf<Seg>()
     val buf = StringBuilder()
+    var i = 0
     var inMath = false
-    for (ch in s) {
-        if (ch == '$') {
-            if (!inMath) {
-                if (buf.isNotEmpty()) { out.add(Seg(SegKind.TEXT, buf.toString())); buf.clear() }
-                inMath = true
-            } else {
+    var closer = ""
+
+    while (i < s.length) {
+        val c = s[i]
+
+        if (!inMath && c == '\\' && i + 1 < s.length && s[i + 1] == '(') {
+            if (buf.isNotEmpty()) { out.add(Seg(SegKind.TEXT, buf.toString())); buf.clear() }
+            inMath = true; closer = "\\)"
+            i += 2; continue
+        }
+        if (!inMath && c == '$') {
+            if (buf.isNotEmpty()) { out.add(Seg(SegKind.TEXT, buf.toString())); buf.clear() }
+            inMath = true; closer = "$"
+            i += 1; continue
+        }
+        if (inMath) {
+            if (closer == "\\)" && c == '\\' && i + 1 < s.length && s[i + 1] == ')') {
                 out.add(Seg(SegKind.MATH, buf.toString().trim()))
-                buf.clear()
-                inMath = false
+                buf.clear(); inMath = false; closer = ""
+                i += 2; continue
             }
-        } else buf.append(ch)
+            if (closer == "$" && c == '$') {
+                out.add(Seg(SegKind.MATH, buf.toString().trim()))
+                buf.clear(); inMath = false; closer = ""
+                i += 1; continue
+            }
+        }
+        buf.append(c)
+        i++
     }
     if (buf.isNotEmpty()) out.add(Seg(if (inMath) SegKind.MATH else SegKind.TEXT, buf.toString()))
     return out

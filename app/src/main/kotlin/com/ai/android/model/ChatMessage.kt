@@ -12,9 +12,18 @@ data class ChatMessage(
     val toolCalls: List<ToolCall> = emptyList(),
     val toolResults: List<ToolResult> = emptyList(),
     val images: List<String> = emptyList(),
-    /** 附件文件路径（用户气泡上方显示为 chip） */
+    /** ⭐ 语音气泡：本地 wav 路径 */
+    val audioPath: String = "",
+    /** ⭐ 语音气泡：时长（ms） */
+    val audioDurationMs: Int = 0,
+    /** ⭐ 图片气泡：本地图片路径 */
+    val imagePath: String = "",
+    /** ⭐ 视频气泡：本地视频路径 */
+    val videoPath: String = "",
+    /** ⭐ 视频气泡：时长（ms） */
+    val videoDurationMs: Int = 0,
+    /** 附件文件路径 */
     val files: List<String> = emptyList(),
-    /** 引用的历史消息内容（发送时附加，渲染时显示为引用框） */
     val quotedContent: String = "",
     val tokenStats: TokenStats? = null,
     val timestamp: Long = System.currentTimeMillis(),
@@ -66,7 +75,6 @@ data class TokenStats(
         else "0%"
 }
 
-/** 一个对话的 Token 累计（取所有非 null 的 TokenStats 求和） */
 @Serializable
 data class TokenTotals(
     val promptTokens: Int = 0,
@@ -76,7 +84,6 @@ data class TokenTotals(
     val totalTokens: Int get() = promptTokens + completionTokens
 }
 
-/** Token 统计导出报告（SAF 另存 JSON） */
 @Serializable
 data class TokenExportReport(
     val conversationId: String,

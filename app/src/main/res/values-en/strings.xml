@@ -3,9 +3,21 @@
     <string name="app_name">Ai Android</string>
     <string name="accessibility_service_description">Allow "Ai Android" to read screen content and simulate taps, typing and swipes to operate apps automatically. All data stays on-device and is never uploaded.</string>
 
-    <!-- Settings -->
-    <string name="set_title">Settings</string>
+    <!-- ==================== Common ==================== -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
     <string name="back">Back</string>
+    <string name="rename">Rename</string>
+    <string name="copy">Copy</string>
+    <string name="edit">Edit</string>
+    <string name="confirm">Confirm</string>
+    <string name="search">Search</string>
+
+    <!-- ==================== Settings ==================== -->
+    <string name="set_title">Settings</string>
     <string name="set_section_provider">Model Service (Provider)</string>
     <string name="set_section_multimodal">Multimodal Binding</string>
     <string name="set_section_agent">Agent Parameters</string>
@@ -26,19 +38,25 @@
     <string name="set_cancel">Cancel</string>
     <string name="set_save">Save</string>
 
-    <!-- File reading -->
+    <string name="cat_sub_model">Model / Multimodal</string>
+    <string name="cat_sub_agent">Params / Behavior / Read limits</string>
+    <string name="cat_sub_ui">Floating / Language / Plugin / Style</string>
+    <string name="cat_sub_harness">Tool control / Log / Sub-agent</string>
+    <string name="cat_sub_system">Shizuku / AI Control / Permissions</string>
+    <string name="cat_sub_terminal">Termux / PTY / Environment</string>
+    <string name="cat_sub_about">Version / Project / License</string>
+    <string name="cat_sub_conversation">Memory / Token / Project</string>
+
     <string name="readlimit_title">Max file-read characters</string>
     <string name="readlimit_desc">Longer content is truncated. 0 means unlimited (large files may exceed the model context).</string>
     <string name="readlimit_none">Unlimited</string>
 
-    <!-- Termux -->
     <string name="termux_title">Termux env (pkg / apt / python)</string>
     <string name="termux_desc">After install, use the Termux ecosystem in the built-in terminal (pkg install xxx, pip, apt). First install ~30MB, 10-30s.</string>
     <string name="termux_install">Install Termux env</string>
     <string name="termux_installing">Installing…</string>
     <string name="termux_uninstall">Uninstall</string>
 
-    <!-- Terminal env -->
     <string name="terminal_title">Terminal environment</string>
     <string name="terminal_desc">Fill the Termux $PREFIX/bin path into the PATH prefix to use pkg / pip / apt in the built-in terminal.</string>
     <string name="terminal_pty">Full PTY terminal (on by default)</string>
@@ -47,11 +65,9 @@
     <string name="terminal_path">PATH prefix (separated by :)</string>
     <string name="terminal_init">Startup init script (one command per line)</string>
 
-    <!-- Floating -->
     <string name="floating_title">Background floating ball</string>
     <string name="floating_desc">Shows a status ball at the screen edge while the Agent runs; tap to expand progress</string>
 
-    <!-- Project -->
     <string name="project_desc">Group related conversations into project folders for easier organization.</string>
     <string name="project_empty">(No projects yet)</string>
     <string name="project_new">New project</string>
@@ -59,10 +75,7 @@
     <string name="project_rename">Rename project</string>
     <string name="project_unnamed">Untitled project</string>
     <string name="project_create">Create</string>
-    <string name="rename">Rename</string>
-    <string name="delete">Delete</string>
 
-    <!-- Memory -->
     <string name="memory_desc">AI writes via the save_memory tool, or add manually. Persists across sessions.</string>
     <string name="memory_empty">(No memories yet)</string>
     <string name="memory_add">Add manually</string>
@@ -70,12 +83,10 @@
     <string name="memory_key">Key (short English word)</string>
     <string name="memory_content">Content</string>
 
-    <!-- AI behavior -->
     <string name="ai_behavior_title">Conversation &amp; title</string>
     <string name="auto_title">AI auto-summarize title</string>
     <string name="auto_title_desc">After the first round, the AI concurrently summarizes a short title (non-blocking)</string>
 
-    <!-- AI control -->
     <string name="ai_control_title">AI phone control (background + live mirror)</string>
     <string name="ai_control_desc">AI drives the device in the background via accessibility, without interrupting your normal use; a live mirror window can show the screen while it works.</string>
     <string name="ai_control_toggle">Allow background control</string>
@@ -90,7 +101,6 @@
     <string name="a11y_guide_go">System settings</string>
     <string name="a11y_guide_later">Later</string>
 
-    <!-- Token -->
     <string name="token_title">Token totals (current conversation)</string>
     <string name="token_desc">Source: sum of tokenStats across all assistant messages</string>
     <string name="token_input">Input</string>
@@ -100,13 +110,11 @@
     <string name="token_export">Export token stats</string>
     <string name="token_clear">Clear stats</string>
 
-    <!-- Plugin -->
     <string name="plugin_title">External plugins (static widgets)</string>
-    <string name="plugin_desc">Import a .zip widget pack (manifest.json + icon), shown in the floating window. JS widgets arrive in beta6.</string>
+    <string name="plugin_desc">Import a .zip widget pack (manifest.json + icon), shown in the floating window.</string>
     <string name="plugin_import">+ Import plugin .zip</string>
     <string name="plugin_empty">(No plugins imported)</string>
 
-    <!-- Permission -->
     <string name="perm_storage">Storage (file read/write)</string>
     <string name="perm_notification">Notifications (task reminders)</string>
     <string name="perm_overlay">Overlay (background status ball)</string>
@@ -115,17 +123,12 @@
     <string name="perm_ungranted">Off</string>
     <string name="perm_go">Enable</string>
 
-    <!-- Language -->
-    <string name="lang_title">Language</string>
+    <string name="lang_title">Language / 语言</string>
     <string name="lang_desc">Switch UI language; import a custom .json pack to override specific strings. Switching is instant and persists after restart.</string>
     <string name="lang_import_pack">+ Import language pack .json</string>
     <string name="lang_remove_pack">Remove custom language pack</string>
     <string name="lang_follow">Follow system</string>
-    <string name="lang_pack_imported">Language pack imported</string>
-    <string name="lang_pack_failed">Import failed (must be a key→translation JSON object)</string>
-    <string name="lang_pack_cleared">Language pack removed</string>
 
-    <!-- Shizuku -->
     <string name="shizuku_title">Shizuku Privilege</string>
     <string name="shizuku_desc">Let the AI run commands as shell via Shizuku (ADB/root), bypassing the app sandbox to read/write Android/data.</string>
     <string name="shizuku_not_installed">Shizuku not installed (feature unavailable, falls back to app sandbox)</string>
@@ -134,7 +137,6 @@
     <string name="shizuku_request">Request permission</string>
     <string name="shizuku_running_as">Running as: shell (uid 2000)</string>
 
-    <!-- Provider edit -->
     <string name="provider_new_title">Add Provider</string>
     <string name="provider_edit_title">Edit Provider</string>
     <string name="provider_name">Name</string>
@@ -144,44 +146,43 @@
     <string name="provider_caps">Supported capabilities</string>
     <string name="provider_openai">OpenAI-compatible</string>
     <string name="provider_anthropic">Anthropic</string>
-            <string name="provider_no_key">No API key</string>
+    <string name="provider_no_key">No API key</string>
     <string name="provider_key_prefix">Key</string>
     <string name="provider_unnamed">Untitled</string>
-    <string name="provider_caps_title">Supported capabilities</string>
 
-        <!-- Multimodal binding -->
     <string name="multimodal_desc">Specify which Provider each capability uses. When unset, the active (or first capable) Provider is chosen automatically.</string>
     <string name="multimodal_search">Current search</string>
     <string name="multimodal_auto">Auto</string>
     <string name="multimodal_none">(No Provider supports this)</string>
     <string name="mm_image">Image gen</string>
+    <string name="mm_video">Video gen</string>
     <string name="mm_vision">Vision</string>
+    <string name="mm_audio">Audio understanding</string>
+    <string name="mm_video_understand">Video understanding</string>
     <string name="mm_tts">Text to speech</string>
     <string name="mm_asr">Speech to text</string>
     <string name="mm_search">Web search</string>
     <string name="mm_call">Audio/video call</string>
     <string name="toast_switched">Switched to</string>
 
-    <!-- Request params (per-row) -->
     <string name="param_title">Request params (add one by one)</string>
-    <string name="param_desc">Beginners don\'t need JSON: tap a preset below to add, or "＋ Add" to fill key / value / type. Saving builds the request-body JSON automatically; advanced users can edit the "Advanced JSON" directly — both stay in sync.</string>
+    <string name="param_desc">Beginners don\'t need JSON: tap a preset below to add, or "+ Add" to fill key / value / type. Saving builds the request-body JSON automatically; advanced users can edit the "Advanced JSON" directly — both stay in sync.</string>
     <string name="param_empty">(No custom params yet)</string>
-    <string name="param_add">＋ Add param</string>
+    <string name="param_add">+ Add param</string>
     <string name="param_key">Key</string>
     <string name="param_value">Value</string>
     <string name="param_adv">Request body (advanced)</string>
     <string name="param_json_label">Custom request-body JSON</string>
     <string name="param_sync">Sync JSON into per-row params</string>
     <string name="param_headers_label">Custom headers (Key: Value per line)</string>
-    <string name="param_merge_hint">The request-body JSON is merged into every request; on key conflict yours wins. After editing JSON, tap "Sync" above to backfill the rows; they match on save.</string>
+    <string name="param_merge_hint">The request-body JSON is merged into every request; on key conflict yours wins.</string>
 
-    <!-- Agent params -->
     <string name="agent_max_rounds">Max tool rounds</string>
     <string name="agent_temperature">Temperature</string>
     <string name="agent_retries">Auto-retry on stream/HTTP failure</string>
     <string name="agent_compress">Context auto-compress</string>
     <string name="agent_compress_desc">After the set rounds, old turns are summarized to compress context, avoiding 400 / over-context errors on long chats.</string>
-        <string name="agent_reasoning">Reasoning effort</string>
+    <string name="agent_reasoning">Reasoning effort</string>
     <string name="agent_reasoning_default">Default</string>
     <string name="agent_reasoning_low">Low</string>
     <string name="agent_reasoning_medium">Medium</string>
@@ -192,13 +193,7 @@
     <string name="agent_prompt_example">e.g.: I\'m a student, please answer in simple terms…</string>
     <string name="agent_rounds_times">times</string>
 
-    <!-- Token toasts -->
-    <string name="token_none">No exportable token stats in the current conversation</string>
-    <string name="token_exported">Token stats exported</string>
-    <string name="token_export_failed">Export failed: %1$s</string>
-    <string name="token_cleared">Cleared token stats for the current conversation</string>
-
-    <!-- Chat -->
+    <!-- ==================== Chat ==================== -->
     <string name="chat_default_title">AI Android</string>
     <string name="chat_unconfigured">Model not configured</string>
     <string name="chat_empty_title">AI Android</string>
@@ -206,7 +201,7 @@
     <string name="chat_empty_hint">It can: organize files · run terminal commands · web search · scheduled tasks · control other apps</string>
     <string name="chat_send">Send</string>
     <string name="chat_stop">Stop</string>
-    <string name="chat_input_placeholder">Enter a command…</string>
+    <string name="chat_input_placeholder">Send a message or hold to talk</string>
     <string name="chat_working">Agent working…</string>
     <string name="chat_new">New chat</string>
     <string name="chat_conversations">Conversations</string>
@@ -215,6 +210,7 @@
     <string name="chat_add">Attach</string>
     <string name="chat_pick_file">Pick file</string>
     <string name="chat_pick_image">Pick image</string>
+    <string name="chat_permission">Permission</string>
     <string name="chat_voice_call">Voice call (GLM-4-Voice)</string>
     <string name="chat_video_call">Video call (GLM-Realtime)</string>
     <string name="chat_quote">Quote</string>
@@ -228,9 +224,64 @@
     <string name="chat_ask_reply">Reply</string>
     <string name="chat_ask_skip">Skip</string>
     <string name="chat_ask_input">Or type an answer…</string>
-    <string name="chat_tts_notready">TTS not ready</string>
+    <string name="chat_ask_more">Show more options (%1$d)…</string>
 
-    <!-- Bubble menu / toolbar -->
+    <string name="input_speaking_record">Recording… (release to transcribe &amp; send)</string>
+    <string name="input_speaking_live">Listening… (speak, then release)</string>
+    <string name="input_speaking_transcribe">Transcribing…</string>
+    <string name="input_switch_model">Switch model</string>
+    <string name="input_no_chat_model">No chat-capable model. Add one in Settings → Model (tick CHAT).</string>
+
+    <string name="perm_dialog_title">Conversation permission</string>
+    <string name="perm_dialog_desc">Controls which tools the AI may call in this conversation. Calls above the level are rejected.</string>
+    <string name="perm_level_0">Read/Write</string>
+    <string name="perm_level_1">Device</string>
+    <string name="perm_level_2">System</string>
+    <string name="perm_level_3">Full access</string>
+    <string name="perm_dialog_allowed">Tools allowed at this level:</string>
+    <string name="perm_saved">Switched to "%1$s"</string>
+
+    <!-- ==================== Conversations ==================== -->
+    <string name="conv_title">Conversations</string>
+    <string name="conv_search_hint">Search conversations…</string>
+    <string name="conv_group_pinned">Pinned</string>
+    <string name="conv_group_today">Today</string>
+    <string name="conv_group_yesterday">Yesterday</string>
+    <string name="conv_group_7d">Last 7 days</string>
+    <string name="conv_group_30d">Last 30 days</string>
+    <string name="conv_group_earlier">Earlier</string>
+    <string name="conv_group_projects">Projects</string>
+    <string name="conv_empty">No conversations found</string>
+    <string name="conv_rename">Rename</string>
+    <string name="conv_pin">Pin</string>
+    <string name="conv_unpin">Unpin</string>
+    <string name="conv_move_to_project">Move to project</string>
+    <string name="conv_move_out">Move out</string>
+    <string name="conv_export">Export</string>
+    <string name="conv_delete">Delete</string>
+    <string name="conv_delete_title">Delete conversation</string>
+    <string name="conv_delete_confirm">Delete conversation "%1$s"? This cannot be undone.</string>
+    <string name="conv_rename_title">Rename conversation</string>
+    <string name="conv_unnamed">Untitled</string>
+    <string name="conv_multi_selected">%1$d selected</string>
+    <string name="conv_select_all_hint">Sort / Multi-select</string>
+    <string name="conv_multi_exit">Exit multi-select</string>
+    <string name="conv_pin_batch">Pin</string>
+    <string name="conv_deleted_n">Deleted %1$d</string>
+    <string name="conv_pinned_n">Pinned %1$d</string>
+    <string name="conv_move_project_title">Move to project</string>
+    <string name="conv_move_project_empty">No projects. Create one in Settings → Conversations → Projects.</string>
+    <string name="conv_move_project_current">(current)</string>
+
+    <string name="conv_toast_exported">Exported: %1$s</string>
+    <string name="conv_toast_export_failed">Export failed: %1$s</string>
+    <string name="conv_menu_more">More</string>
+    <string name="conv_arrow_expand">Expand</string>
+    <string name="conv_arrow_collapse">Collapse</string>
+    <string name="conv_sort_hint">Sort / Multi-select</string>
+    <string name="conv_multi_exit_hint">Exit multi-select</string>
+
+    <!-- ==================== Bubbles / Toolbar ==================== -->
     <string name="menu_edit">Edit</string>
     <string name="menu_delete">Delete</string>
     <string name="menu_multi">Multi-select</string>
@@ -253,11 +304,21 @@
     <string name="toolbar_more">More</string>
     <string name="toolbar_continue">▶ Continue</string>
     <string name="toolbar_none">(No more actions)</string>
-    <string name="reasoning_title">💭 Reasoning</string>
+    <string name="reasoning_title">Thinking</string>
     <string name="reasoning_streaming">Generating…</string>
     <string name="image_label">Image</string>
 
-    <!-- Terminal -->
+    <!-- ToolCallCard -->
+    <string name="tool_arg">Args</string>
+    <string name="tool_result">Result</string>
+    <string name="tool_error">Error</string>
+    <string name="tool_no_args">(no args)</string>
+    <string name="tool_truncated_n">Truncated %1$d chars</string>
+    <string name="tool_view_all">View all (%1$s)</string>
+    <string name="tool_truncated_hint">…(truncated, tap "View all" above)</string>
+    <string name="tool_full_result_title">%1$s · Full result</string>
+
+    <!-- ==================== Terminal ==================== -->
     <string name="term_title">Terminal</string>
     <string name="term_pty_title">Terminal (PTY)</string>
     <string name="term_bound">Bound to current chat</string>
@@ -270,17 +331,124 @@
     <string name="term_restart">Restart</string>
     <string name="term_pty_unavailable">PTY terminal unavailable</string>
     <string name="term_pty_unavailable_desc">(proot not installed or session not created)</string>
+    <string name="term_select">Select</string>
+    <string name="term_paste">Paste</string>
 
-    <!-- Conversations -->
-    <string name="conv_title">Conversations</string>
-    <string name="conv_import">Import</string>
-    <string name="conv_new">New</string>
-    <string name="conv_pin">Pin</string>
-    <string name="conv_unpin">Unpin</string>
-    <string name="conv_export">Export</string>
-    <string name="conv_token_stats">View token stats</string>
-
-    <!-- Call -->
+    <!-- ==================== Call ==================== -->
     <string name="call_voice">Voice call</string>
     <string name="call_video">Video call</string>
+
+    <!-- ==================== 追加：本轮新增（修复未转义单引号）==================== -->
+    <string name="tool_display_limit_desc">Max characters shown when expanding a tool card. Beyond it text is truncated; tap "View all" for full content.</string>
+    <string name="tool_display_arg_limit">Args area limit (chars)</string>
+    <string name="tool_display_output_limit">Output area limit (chars)</string>
+
+    <string name="harness_shell_freq_title">Shell command frequency limit</string>
+    <string name="harness_shell_freq_desc">Max system-class commands per minute (run_shell_command / terminal_exec / run_js). 0 = unlimited.</string>
+    <string name="harness_shell_freq_unit">/ minute</string>
+    <string name="harness_shell_freq_unlimited">Unlimited</string>
+    <string name="harness_shell_freq_limited">Limit %1$s / min</string>
+    <string name="harness_cache_title">Result caching</string>
+    <string name="harness_cache_desc">Read tools (read_file / web_search) return cached results for identical args within a short window. Write tools invalidate cache on success.</string>
+    <string name="harness_clamp_title">Output clamp (UI friendly)</string>
+    <string name="harness_clamp_desc">Strips ANSI escape sequences and null bytes for a cleaner UI. Does NOT affect the content the AI sees.</string>
+    <string name="harness_dangerous_title">Auto-run dangerous tools</string>
+    <string name="harness_dangerous_desc">When off, rm / sudo / delete_file etc. always prompt for confirmation.</string>
+    <string name="harness_path_guard_title">Write path whitelist</string>
+    <string name="harness_path_guard_desc">Only allow AI to write within /sdcard, app-private dirs, etc.</string>
+
+    <string name="harness_log_enable_title">Enable session log</string>
+    <string name="harness_log_enable_desc">Records each tool call, args (redacted), result, guard denial, approval. Stored in filesDir/logs/ (app-private).</string>
+    <string name="harness_log_view_current">Current conversation</string>
+    <string name="harness_log_view_all">All conversation logs</string>
+    <string name="harness_log_export_all">Export all logs to /sdcard/AiAndroid/logs/</string>
+    <string name="harness_log_exported_n">Exported %1$d logs to /sdcard/AiAndroid/logs/</string>
+    <string name="harness_log_export_empty">No logs to export</string>
+    <string name="harness_log_none">(no logs)</string>
+    <string name="harness_log_current_title">Current conversation log</string>
+    <string name="harness_log_all_title">All conversation logs (%1$d)</string>
+    <string name="harness_log_view">View</string>
+
+    <string name="harness_subagent_title">Allow AI to call sub-agent</string>
+    <string name="harness_subagent_desc">For complex / independent / long tasks, the AI may delegate to a sub-agent. The sub-agent has its own context and tool loop, returning only a summary — not polluting the main chat.</string>
+    <string name="harness_subagent_token_title">Include sub-agent tokens in main stats</string>
+    <string name="harness_subagent_token_desc">When on, sub-agent token usage is added to the main conversation stats (InputBar bottom). When off, it\'s visible only in the session log.</string>
+    <string name="harness_subagent_hint">Note: a sub-agent cannot call itself (recursion guard); it also cannot call ask_user (avoids UI contention with the main Agent).</string>
+
+    <string name="about_title">About AI Android</string>
+    <string name="about_version">Version</string>
+    <string name="about_tech">Stack</string>
+    <string name="about_position">Positioning</string>
+    <string name="about_license">License</string>
+    <string name="about_repo">Repository</string>
+    <string name="about_tech_value">Kotlin + Compose</string>
+    <string name="about_position_value">An AI Agent running on your phone</string>
+    <string name="about_license_value">Open source</string>
+    <string name="about_desc">This app can call AI models, control the phone UI, execute terminal commands, etc. With Shizuku it can bypass the app sandbox to read/write Android/data.</string>
+
+    <string name="provider_caps_mutex_hint">Capabilities are mutually exclusive between voice group (TTS/ASR/REALTIME) and chat/multimodal group (CHAT/VISION/IMAGE/VIDEO/AUDIO/VIDEO_UNDERSTAND/SEARCH). Selecting one group clears the other. Defaults for a new capability are auto-filled.</string>
+    <string name="provider_builtin_title">Built-in params (auto-sent per request)</string>
+    <string name="provider_builtin_desc">These are assembled by code and don\'t occupy the custom params below. Tap ✕ to hide.</string>
+    <string name="provider_builtin_model_hint">(current model name)</string>
+    <string name="provider_builtin_messages_hint">(message array)</string>
+    <string name="provider_builtin_tools_hint">(tool definitions, if registered)</string>
+    <string name="provider_hide">Hide</string>
+    <string name="provider_fill_defaults">Refill defaults for current capabilities</string>
+    <string name="provider_fill_empty">No default params for current capabilities</string>
+    <string name="provider_fill_all_exist">All default params already filled</string>
+    <string name="provider_fill_added">Added %1$d default params</string>
+    <string name="param_type_title">Param type</string>
+
+    <string name="project_memory_title">Project memory · %1$s</string>
+    <string name="project_memory_desc">All conversations in this project share this memory. The AI reads it automatically and can add/edit/delete as needed.</string>
+    <string name="project_memory_empty">No project memory yet</string>
+    <string name="project_memory_add">Add project memory</string>
+    <string name="project_memory_key_hint">Key (short English word, e.g. goal)</string>
+    <string name="project_memory_content_label">Content</string>
+    <string name="project_memory_view_title">Project memory: %1$s</string>
+
+    <string name="memory_view_title">Memory: %1$s</string>
+    <string name="memory_copied">Copied</string>
+
+    <string name="shizuku_help_link">App not appearing in the authorization list? Troubleshooting</string>
+    <string name="shizuku_help_title">Shizuku authorization (4 steps)</string>
+    <string name="shizuku_help_step1">1. Make sure Shizuku is running: open Shizuku app, home shows "Running".</string>
+    <string name="shizuku_help_step2">2. Verify this app is installed: run pm list packages | grep ai.android in a terminal.</string>
+    <string name="shizuku_help_step3">3. Shizuku must be ≥ v13 (API_V23 permission). Old v11.x uses API_VXX and won\'t recognize this app.</string>
+    <string name="shizuku_help_step4">4. Kill and restart Shizuku: swipe it away from recents, reopen Shizuku → authorization list refreshes.</string>
+    <string name="shizuku_help_more">If still not visible: use "Add manually" in Shizuku, or upgrade Shizuku to v13.1.5+.</string>
+    <string name="shizuku_got_it">Got it</string>
+
+    <string name="theme_style_title">Theme style</string>
+    <string name="theme_style_desc">Switch the app-wide visual style (palette + radius + weight). The floating window syncs too.</string>
+
+    <string name="agent_unlimited">Unlimited</string>
+    <string name="agent_max_rounds_label">%1$s %2$s</string>
+    <string name="agent_temp_label">Temperature: %1$s</string>
+    <string name="agent_retries_label">Auto-retry on stream/HTTP failure: %1$d (0=no retry)</string>
+    <string name="agent_compress_label">Context auto-compress: %1$d</string>
+
+    <string name="memory_btn">Memory</string>
+    <string name="lang_imported">Language pack imported</string>
+    <string name="lang_failed">Import failed (must be a key→translation JSON object)</string>
+    <string name="lang_cleared">Language pack removed</string>
+    <string name="plugin_delete_toast">Deleted %1$s</string>
+    <string name="plugin_import_error">Import failed: %1$s</string>
+    <string name="token_none_to_export">No exportable token stats in the current conversation</string>
+    <string name="token_exported">Token stats exported</string>
+    <string name="token_export_failed">Export failed: %1$s</string>
+    <string name="token_cleared">Cleared token stats for the current conversation</string>
+    <string name="cat_sub_plugin">Import Skill / Plugin, view info</string>
+    <string name="plugin_skill_section_title">Skill</string>
+    <string name="plugin_skill_desc">Import a .zip skill pack containing SKILL.md. A skill is a natural-language instruction set for the AI, with Python scripts under scripts/ that the AI can run via terminal_exec.</string>
+    <string name="plugin_skill_import">Import Skill .zip</string>
+    <string name="plugin_skill_empty">(No skills imported)</string>
+    <string name="plugin_skill_delete_title">Delete Skill</string>
+    <string name="plugin_skill_delete_confirm">Delete skill "%1$s"?</string>
+    <string name="plugin_skill_no_content">(SKILL.md is empty)</string>
+    <string name="plugin_detail_id">id: %1$s</string>
+    <string name="plugin_detail_version">Version: %1$s</string>
+    <string name="plugin_detail_author">Author: %1$s</string>
+    <string name="plugin_detail_tags">Tags: %1$s</string>
+    <string name="plugin_detail_btn">Detail</string>
 </resources>

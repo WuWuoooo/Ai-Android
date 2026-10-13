@@ -9,10 +9,18 @@ import kotlinx.serialization.json.JsonObject
 /**
  * 无障碍操控手机。
  * 实际能力由 AgentAccessibilityService 提供（系统无障碍服务实例）。
+ *
+ * ⭐ 修复（问题 1）：parallelizable=false。
+ *    UI 操作（点按 / 滑动 / 输入 / 全局动作）有严格的先后顺序，
+ *    两个并发点按会乱序执行，导致操作落点错误。
+ *    AgentCore 会严格按模型返回顺序串行执行本工具。
  */
 class AccessibilityTool : ToolExecutor {
 
     override val name = "accessibility_control"
+
+    // ⭐ 修复（问题 1）：UI 操作有顺序，必须串行
+    override val parallelizable = false
 
     override suspend fun execute(args: JsonObject): String = withContext(Dispatchers.Default) {
         val svc = AgentAccessibilityService.instance

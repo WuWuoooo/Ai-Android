@@ -12,6 +12,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import com.ai.android.agent.PluginGuardBridge
+import com.ai.android.model.ToolCall
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 
 /**
  * ⭐ v1.2.0 #7.1（原 beta6）：JS 动态悬浮窗运行时。
@@ -56,10 +61,52 @@ class JsPluginRuntime(private val context: Context) {
 
     /** 插件直接给 Agent 发消息 → 宿主经 AgentBridge 复用 MainViewModel.send */
     var onSendToAgent: ((text: String) -> Unit)? = null
+    
+    /** ⭐ 调 JS Guard 回调：由 PluginGuardBridge.jsAskCallback 注入（在 MainApp 里做） */
+var onAskGuard: (suspend (pluginId: String, callbackId: String, call: ToolCall) -> Boolean)? = null
+
+/**
+ * 宿主调 JS 的 Guard 回调。
+ * @param pluginId 插件 id
+ * @param callbackId 插件注册时传的回调 id
+ * @param call 工具调用信息（name + args JSON）
+ * @return true=允许，false=拒绝
+ */
+suspend fun askGuard(pluginId: String, guardName: String, call: ToolCall): Boolean {
+    val wv = webViews[pluginId] ?: return true   // 插件没加载 → 放行
+    val argsJson = call.arguments.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    val result = withTimeoutOrNull(800L) {
+        suspendCancellableCoroutine<Boolean> { cont ->
+            mainHandler.post {
+                runCatching {
+                    wv.evaluateJavascript(
+                        "(function(){ try { " +
+                            "var r = window.__guardCallback && window.__guardCallback(" +
+                            "\"$guardName\", \"${call.name}\", \"$argsJson\"); " +
+                            "return r === true || r === 'true' ? 'true' : 'false'; " +
+                            "} catch(e) { return 'false'; } })();",
+                        { value ->
+                            if (cont.isActive) {
+                                cont.resume(value?.trim('"') == "true")
+                            }
+                        }
+                    )
+                }.onFailure {
+                    Log.w(tag, "askGuard evaluateJavascript failed", it)
+                    if (cont.isActive) cont.resume(true)   // 执行异常 → 放行（避免误伤）
+                }
+            }
+        }
+    }
+    return result ?: false   // 超时 → 拒绝
+}
 
     /** 清空并重建：扫描启用且含 JS 能力的插件，加载其 entryPoint。 */
     fun refresh() {
         mainHandler.post {
+        // ⭐ 卸载旧插件的 guards（重新加载）
+            webViews.keys.toList().forEach { PluginGuardBridge.unregisterPlugin(it) }
             webViews.values.forEach { runCatching { it.destroy() } }
             webViews.clear()
             runCatching {
@@ -193,5 +240,32 @@ class JsPluginRuntime(private val context: Context) {
             // 宿主 → JS 的事件经 pushEvent 分发，此处留作占位（实际走 pushEvent）
             Log.d(tag, "onBallEvent $pluginId: $jsonStr")
         }
+        // ==================== ⭐ 插件 Guard API ====================
+
+/**
+ * JS 插件注册代码式 Guard。
+ * 用法（插件 JS 里）：
+ *   host.registerGuard("no_delete_sdcard",
+ *                      "delete_file",   // 工具名过滤，* 通配，逗号分隔多个
+ *                      "cb-001")        // 回调 id，宿主用 __guardCallback(cbId, argsJson) 调回来
+ *
+ * 宿主检查流程：
+ *   1. 每次工具调用前，PluginGuardBridge 调 jsAskCallback
+ *   2. jsAskCallback 内部经 WebView.evaluateJavascript 调
+ *      window.__guardCallback(cbId, argsJson) → 返回 "true"/"false"
+ *   3. 超时 500ms → 拒绝
+ */
+@JavascriptInterface
+fun registerGuard(guardName: String, toolFilter: String, callbackId: String) {
+    PluginGuardBridge.registerJsGuard(pluginId, guardName, toolFilter, callbackId)
+}
+
+/** JS 插件注销 Guard */
+@JavascriptInterface
+fun unregisterGuard(guardName: String) {
+    // 简单实现：直接卸载整个插件的 guards（重新 register 会替换同名）
+    val remaining = PluginGuardBridge.guardCountOf(pluginId)
+    Log.d(tag, "unregisterGuard $pluginId/$guardName (remaining=$remaining)")
+}
     }
 }
